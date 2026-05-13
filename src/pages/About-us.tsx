@@ -59,8 +59,8 @@ export default function About() {
           <div className="relative w-full max-w-md lg:max-w-lg">
             <img
               className="w-full h-[300px] sm:h-[400px] lg:h-[500px] object-cover rounded-3xl shadow-xl"
-              src="about-img.jpg"
-              alt="WaqtMoney  Payday Loan"
+              src="/about-img.jpg"
+              alt="Waqt Money Payday Loan"
             />
 
             {/* Floating Card */}
@@ -99,7 +99,7 @@ export default function About() {
             <div className="w-24 h-1 mt-4 mx-auto lg:mx-0 rounded-full bg-gradient-to-r from-indigo-600 to-purple-400"></div>
 
             <p className="mt-6 text-sm md:text-lg text-slate-600 leading-relaxed">
-              WaqtMoney  provides quick and easy payday loans to salaried individuals across India.
+              Waqt Money provides quick and easy payday loans to salaried individuals across India.
               Whether it's an emergency expense or a temporary cash shortage, we help you get funds instantly.
             </p>
 
@@ -140,7 +140,7 @@ export default function About() {
 
             <p className="mt-6 text-sm leading-7 text-slate-600 md:text-base">
               Life is full of unexpected moments, and when they strike, you need
-              financial support you can rely on. WaqtMoney provides quick,
+              financial support you can rely on. Waqt Money provides quick,
               hassle-free loans designed to give you access to funds without the
               stress of paperwork.
             </p>
@@ -148,7 +148,7 @@ export default function About() {
             <p className="mt-4 text-sm leading-7 text-slate-600 md:text-base">
               From instant approvals to direct transfers, every step is crafted
               for your convenience. With simplicity, transparency, and
-              flexibility at the core, WaqtMoney ensures help reaches you
+              flexibility at the core, Waqt Money ensures help reaches you
               exactly when you need it.
             </p>
 

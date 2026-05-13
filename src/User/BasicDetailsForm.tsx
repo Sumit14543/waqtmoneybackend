@@ -45,7 +45,6 @@ const BasicDetailsForm = () => {
           return data;
         })
         .then((data) => {
-          console.log("Pincode API response:", data);
           if (data.success && data.city) {
             setCity(data.city);
             setErrors((prev) => ({ ...prev, pincode: undefined, city: undefined }));
@@ -191,6 +190,7 @@ const BasicDetailsForm = () => {
                 <input
                   type="text"
                   inputMode="numeric"
+                  autoComplete="postal-code"
                   maxLength={6}
                   value={pincode}
                   onChange={(event) => setPincode(digitsOnly(event.target.value).slice(0, 6))}
@@ -203,6 +203,7 @@ const BasicDetailsForm = () => {
                 <label className="text-sm font-bold text-[#071d3a]">City</label>
                 <input
                   type="text"
+                  autoComplete="address-level2"
                   value={fetchingCity ? "Fetching..." : city}
                   onChange={(event) => setCity(event.target.value)}
                   className={`mt-2 h-[52px] w-full rounded-lg border border-[#d8c5ff] px-4 text-sm font-semibold text-[#071d3a] outline-none focus:border-[#8048e2] ${fetchingCity ? "bg-[#f8fafc] text-[#a0aec0]" : ""}`}
@@ -248,6 +249,7 @@ const BasicDetailsForm = () => {
                   <input
                     type="text"
                     inputMode="numeric"
+                    autoComplete="off"
                     value={income}
                     onChange={(event) => setIncome(formatAmount(event.target.value))}
                     className="min-w-0 flex-1 px-4 text-base font-semibold text-[#071d3a] outline-none"

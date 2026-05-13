@@ -13,6 +13,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import BrandLogo from "@/Components/BrandLogo";
 
 const quickLinks = [
   { name: "Home", link: "/", icon: Home },
@@ -41,25 +42,19 @@ const Footer = () => {
       <div className="h-1 bg-gradient-to-r from-purple-600 via-violet-500 to-orange-400" />
 
       <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.2fr_0.8fr_1fr_1.25fr]">
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.2fr_0.8fr_1fr_1.25fr] lg:gap-10">
           {/* Brand */}
-          <div className="sm:col-span-2 lg:col-span-1">
-            <Link to="/" className="mb-4 inline-flex w-fit items-center">
-              <img
-                src="/waqt-money-logo-img.png"
-                alt="WaqtMoney Logo"
-                className="h-20 w-auto object-contain md:h-40 md:-my-16"
-              />
+          <div className="flex flex-col items-center sm:col-span-2 sm:items-start lg:col-span-1">
+            <Link to="/" className="mb-4 inline-flex w-fit items-center justify-center">
+              <BrandLogo className="h-14 w-auto object-contain md:-mt-3" />
             </Link>
 
-            <p className="max-w-sm text-sm leading-6 text-slate-600">
+            <p className="mx-auto max-w-sm text-sm leading-6 text-slate-600 sm:mx-0">
               Fast approvals, simple process, and secure digital loan support
-              for salaried customers. 
-             
+              for salaried customers.
             </p>
-            <p> </p>
 
-            <div className="mt-5 flex flex-wrap gap-3">
+            <div className="mt-5 flex flex-wrap justify-center gap-3 sm:justify-start">
               <span className="inline-flex items-center gap-2 rounded-full border border-purple-100 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm">
                 <ShieldCheck className="h-4 w-4 text-purple-600" />
                 Secure Process
@@ -129,7 +124,7 @@ const Footer = () => {
             <h4 className="mb-3 text-base font-semibold text-slate-950">
               Contact Info
             </h4>
-            <span className="mb-4 block h-0.5 w-10 bg-purple-600" />
+            <span className="mx-auto mb-4 block h-0.5 w-10 bg-purple-600 sm:mx-0" />
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
               {contactItems.map((item) => {
@@ -138,7 +133,7 @@ const Footer = () => {
                 return (
                   <div
                     key={item.label}
-                    className="flex min-w-0 items-center gap-3 rounded-lg border border-purple-100 bg-white px-3 py-3 shadow-sm"
+                    className="flex min-w-0 items-center gap-3 rounded-lg border border-purple-100 bg-white px-3 py-3 text-left shadow-sm"
                   >
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-purple-50 text-purple-600">
                       <Icon className="h-4 w-4" />
@@ -159,8 +154,8 @@ const Footer = () => {
           </div>
         </div>
 
-        <div className="mt-8 rounded-xl border border-purple-100 bg-white/85 p-4 text-left shadow-sm sm:p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
+        <div className="mt-8 rounded-xl border border-purple-100 bg-white/85 p-4 text-center shadow-sm sm:p-5 sm:text-left">
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:gap-4">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-500">
               <AlertTriangle className="h-5 w-5" />
             </span>
@@ -183,9 +178,9 @@ const Footer = () => {
         </div>
 
         {/* Bottom */}
-        <div className="mt-8 flex flex-col gap-3 border-t border-purple-100 pt-5 text-center text-xs text-slate-500 sm:text-left md:flex-row md:items-center md:justify-between">
+        <div className="mt-8 flex flex-col items-center gap-3 border-t border-purple-100 pt-5 text-center text-xs text-slate-500 sm:text-left md:flex-row md:items-center md:justify-between">
           <p>&copy; 2026 Waqt Money. All rights reserved.</p>
-              <p>NBFC Partner &nbsp;&nbsp;&nbsp; Waqt Finance Pvt Ltd  </p>
+          <p>NBFC Partner: Waqt Finance Pvt Ltd</p>
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 md:justify-end">
             {/* <Link
               to="/Privacy-Policies"
@@ -205,7 +200,7 @@ const Footer = () => {
               Support
             </Link> */}
             
-            <p> RBI LICENCE NO. :B.10.00143</p>
+            <p>RBI LICENCE NO.: B.10.00143</p>
           </div>
         </div>
       </div>

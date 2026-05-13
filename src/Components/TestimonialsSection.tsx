@@ -1,28 +1,28 @@
 const TestimonialsSection = () => {
   const cardsData = [
     {
-        image: 'testimonals-img-1.jpg',
+        image: '/testimonals-img-1.jpg',
         name: 'Rahul Sharma',
         handle: 'Delhi',
         rating: 5,
         review: 'Waqt Money provided me with an instant salary advance during an emergency. The process was very fast and easy.'
     },
     {
-        image: 'testimonals-img-3.jpg',
+        image: '/testimonals-img-3.jpg',
         name: 'Priya Verma',
         handle: 'Noida',
         rating: 4,
         review: 'I got a loan on my salary without any hassle. The documentation process was also simple.'
     },
     {
-        image: 'testimonal-img-2.jpg',
+        image: '/testimonal-img-2.jpg',
         name: 'Amit Singh',
         handle: 'Gurgaon',
         rating: 5,
         review: 'Instant approval and quick disbursal solved my financial problem.'
     },
     {
-        image: 'testimonals-img-4.jpg',
+        image: '/testimonals-img-4.jpg',
         name: 'Neha Gupta',
         handle: 'Faridabad',
         rating: 4,

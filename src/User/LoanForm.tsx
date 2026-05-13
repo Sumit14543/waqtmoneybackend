@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+
 type ErrorsType = {
   amount?: string;
   purpose?: string;
@@ -29,7 +31,7 @@ const LoanForm = () => {
 
   // VALIDATE
   const validate = () => {
-    let newErrors: ErrorsType = {};
+    const newErrors: ErrorsType = {};
     const numericAmount = Number(parseAmount(amount));
 
     if (!amount) {
@@ -64,7 +66,7 @@ const LoanForm = () => {
     };
 
     try {
-      const res = await fetch("http://localhost:5000/api/loan", {
+      const res = await fetch(`${API_BASE_URL}/loan`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -72,9 +74,7 @@ const LoanForm = () => {
         body: JSON.stringify(data),
       });
 
-      // 🔥 IMPORTANT FIX
       const text = await res.text();
-      console.log("RAW RESPONSE:", text);
 
       let result;
       try {

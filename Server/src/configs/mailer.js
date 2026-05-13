@@ -6,6 +6,10 @@ const smtpUser = (process.env.SMTP_USER || process.env.SMTP_USERNAME)?.trim();
 const smtpPass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD)?.trim();
 const smtpPort = Number.parseInt(process.env.SMTP_PORT ?? "587", 10);
 const smtpSecure = (process.env.SMTP_SECURE || "").trim().toLowerCase();
+const smtpTlsServername = process.env.SMTP_TLS_SERVERNAME?.trim() || smtpHost;
+const allowInvalidTls =
+  process.env.SMTP_ALLOW_INVALID_TLS === "true" &&
+  process.env.NODE_ENV !== "production";
 
 if (!smtpHost || !smtpUser || !smtpPass || Number.isNaN(smtpPort)) {
   throw new Error(
@@ -22,8 +26,8 @@ const transporter = nodemailer.createTransport({
     pass: smtpPass,
   },
   tls: {
-    // This helps with Hostinger and other providers that might have self-signed certificates or strict Node.js TLS requirements
-    rejectUnauthorized: false
+    servername: smtpTlsServername,
+    rejectUnauthorized: !allowInvalidTls,
   },
   connectionTimeout: 10000,
   greetingTimeout: 10000,

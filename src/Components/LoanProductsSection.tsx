@@ -90,16 +90,17 @@ const LoanProductsSection = () => {
                   <p className="text-xs font-semibold text-foreground">{p.tenure}</p>
                 </div>
               </div>
-              <Link to="/user/apply" className="inline-block">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-primary hover:text-primary/80 p-0 h-auto font-semibold flex items-center gap-1 hover:gap-2 transition-all"
-                >
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="text-primary hover:text-primary/80 p-0 h-auto font-semibold flex items-center gap-1 hover:gap-2 transition-all"
+              >
+                <Link to="/user/apply">
                   Apply Now
                   <ArrowRight className="w-4 h-4" />
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </motion.div>
           ))}
         </div>

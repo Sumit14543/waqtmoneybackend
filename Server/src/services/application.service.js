@@ -1,8 +1,13 @@
 import db from "../configs/db.js";
+import mysql from "mysql2/promise";
+import { fetchUanByMobile } from "./uan.service.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
+const LEGACY_APPLICATION_TABLE = "loan_applications";
 const HERO_LEADS_TABLE = "waqt_money_hero_leads";
 const CONTACT_QUERIES_TABLE = "waqt_money_contact_queries";
+let legacyDbPool;
+let applicationTableReady = false;
 
 const badRequest = (message) => {
   const error = new Error(message);
@@ -10,7 +15,77 @@ const badRequest = (message) => {
   return error;
 };
 
+const ensureApplicationTable = async () => {
+  if (applicationTableReady) return;
+
+  if (await tableExists(APPLICATION_TABLE)) {
+    applicationTableReady = true;
+    return;
+  }
+
+  await db.execute(
+    `CREATE TABLE ${APPLICATION_TABLE} (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      application_id VARCHAR(64) NOT NULL UNIQUE,
+      loan_type VARCHAR(50) NULL,
+      mobile VARCHAR(20) NULL,
+      email VARCHAR(255) NULL,
+      pan_number VARCHAR(20) NULL,
+      uan_number VARCHAR(20) NULL,
+      employment_status VARCHAR(100) NULL,
+      monthly_income DECIMAL(12,2) NULL,
+      loan_amount DECIMAL(12,2) NULL,
+      loan_purpose VARCHAR(255) NULL,
+      has_running_loan TINYINT(1) DEFAULT 0,
+      full_name VARCHAR(255) NULL,
+      dob DATE NULL,
+      pincode VARCHAR(10) NULL,
+      city VARCHAR(100) NULL,
+      company_name VARCHAR(255) NULL,
+      designation VARCHAR(255) NULL,
+      office_email VARCHAR(255) NULL,
+      salary_day INT NULL,
+      office_address TEXT NULL,
+      office_pincode VARCHAR(10) NULL,
+      education VARCHAR(100) NULL,
+      experience_years INT NULL,
+      bank_name VARCHAR(255) NULL,
+      branch_name VARCHAR(255) NULL,
+      account_holder VARCHAR(255) NULL,
+      account_number VARCHAR(32) NULL,
+      ifsc_code VARCHAR(20) NULL,
+      reference1_name VARCHAR(255) NULL,
+      reference1_mobile VARCHAR(15) NULL,
+      reference1_relation VARCHAR(100) NULL,
+      reference2_name VARCHAR(255) NULL,
+      reference2_mobile VARCHAR(15) NULL,
+      reference2_relation VARCHAR(100) NULL,
+      selfie_photo VARCHAR(255) NULL,
+      salary_slip_current VARCHAR(255) NULL,
+      video_kyc VARCHAR(255) NULL,
+      current_step VARCHAR(100) NULL,
+      submit_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      last_activity_at DATETIME NULL,
+      INDEX idx_application_mobile (mobile),
+      INDEX idx_application_pan (pan_number),
+      INDEX idx_application_activity (last_activity_at)
+    )`
+  );
+
+  applicationTableReady = true;
+};
+
+const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
+
+const normalizeUanNumber = (value) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  return /^\d{12}$/.test(digits) ? digits : "";
+};
+
 const ensureColumns = async (columns) => {
+  await ensureApplicationTable();
+
   const [existingColumns] = await db.execute(
     `SELECT COLUMN_NAME
      FROM INFORMATION_SCHEMA.COLUMNS
@@ -28,8 +103,169 @@ const ensureColumns = async (columns) => {
   }
 };
 
+const tableExists = async (tableName) => {
+  const [rows] = await db.execute(
+    `SELECT TABLE_NAME
+     FROM INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+     LIMIT 1`,
+    [tableName]
+  );
+
+  return rows.length > 0;
+};
+
+const getLegacyUanByApplicationId = async (applicationId) => {
+  if (!applicationId) return "";
+
+  const currentDbUan = await getLegacyUanFromConnection(db, applicationId).catch(() => "");
+  if (currentDbUan) return currentDbUan;
+
+  const legacyDb = getLegacyDbPool();
+  if (!legacyDb) return "";
+
+  return getLegacyUanFromConnection(legacyDb, applicationId).catch((error) => {
+    console.error("External legacy UAN lookup error:", error.message);
+    return "";
+  });
+};
+
+const getLegacyDbPool = () => {
+  const host = process.env.LEGACY_DB_HOST;
+  const user = process.env.LEGACY_DB_USER;
+  const database = process.env.LEGACY_DB_NAME;
+
+  if (!host || !user || !database) return null;
+
+  if (!legacyDbPool) {
+    const rawPassword = process.env.LEGACY_DB_PASS ?? "";
+    const poolConfig = {
+      host,
+      user,
+      database,
+      port: Number.parseInt(process.env.LEGACY_DB_PORT || "3306", 10),
+      waitForConnections: true,
+      connectionLimit: 3,
+    };
+
+    if (rawPassword !== "") {
+      poolConfig.password = rawPassword;
+    }
+
+    legacyDbPool = mysql.createPool(poolConfig);
+  }
+
+  return legacyDbPool;
+};
+
+const getLegacyUanFromConnection = async (connection, applicationId) => {
+  if (!(await tableExistsInConnection(connection, LEGACY_APPLICATION_TABLE))) return "";
+
+  const [rows] = await connection.execute(
+    `SELECT uan_number
+     FROM ${LEGACY_APPLICATION_TABLE}
+     WHERE application_id = ?
+     LIMIT 1`,
+    [applicationId]
+  );
+
+  return rows[0]?.uan_number || "";
+};
+
+const getSavedUanByMobile = async (mobile) => {
+  const normalizedMobile = normalizeMobile(mobile);
+  if (!/^[6-9]\d{9}$/.test(normalizedMobile)) return "";
+
+  await ensureColumns([["uan_number", "varchar(20) NULL"]]);
+
+  const [rows] = await db.execute(
+    `SELECT uan_number
+     FROM ${APPLICATION_TABLE}
+     WHERE (mobile = ? OR mobile = ? OR mobile = ?)
+       AND uan_number IS NOT NULL
+       AND uan_number <> ''
+     ORDER BY last_activity_at DESC, id DESC
+     LIMIT 1`,
+    [normalizedMobile, `91${normalizedMobile}`, `+91${normalizedMobile}`]
+  );
+
+  return normalizeUanNumber(rows[0]?.uan_number);
+};
+
+export const saveApplicationUanById = async (id, uanNumber) => {
+  if (!id) throw badRequest("Application ID is required");
+
+  const normalizedUan = normalizeUanNumber(uanNumber);
+  if (!normalizedUan) return "";
+
+  await ensureColumns([["uan_number", "varchar(20) NULL"]]);
+
+  const [result] = await db.execute(
+    `UPDATE ${APPLICATION_TABLE}
+     SET uan_number = ?, last_activity_at = NOW()
+     WHERE id = ? OR application_id = ?`,
+    [normalizedUan, id, id]
+  );
+
+  if (result.affectedRows === 0) {
+    throw badRequest("Application not found");
+  }
+
+  return normalizedUan;
+};
+
+const syncApplicationUan = async (application, lookupId) => {
+  if (!application) return null;
+
+  const applicationId = lookupId || application.application_id || application.id;
+
+  const savedUanNumber = await getSavedUanByMobile(application.mobile);
+  if (savedUanNumber) {
+    return saveApplicationUanById(applicationId, savedUanNumber);
+  }
+
+  const legacyUanNumber = await getLegacyUanByApplicationId(application.application_id || applicationId);
+  if (legacyUanNumber) {
+    return saveApplicationUanById(applicationId, legacyUanNumber);
+  }
+
+  const uanNumber = await fetchUanByMobile(application.mobile).catch((error) => {
+    console.error("UAN lookup error:", error);
+    return "";
+  });
+
+  if (uanNumber) {
+    return saveApplicationUanById(applicationId, uanNumber);
+  }
+
+  return null;
+};
+
+const tableExistsInConnection = async (connection, tableName) => {
+  const [rows] = await connection.execute(
+    `SELECT TABLE_NAME
+     FROM INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+     LIMIT 1`,
+    [tableName]
+  );
+
+  return rows.length > 0;
+};
+
 export const updateApplication = async (id, data) => {
   if (!id) throw badRequest("Application ID is required for update");
+
+  await ensureApplicationTable();
+
+  if (
+    Object.prototype.hasOwnProperty.call(data, "uan_number") ||
+    Object.prototype.hasOwnProperty.call(data, "uanNumber")
+  ) {
+    await ensureColumns([["uan_number", "varchar(20) NULL"]]);
+  }
 
   if (Object.prototype.hasOwnProperty.call(data, "video_kyc")) {
     await ensureColumns([["video_kyc", "varchar(255) NULL"]]);
@@ -37,6 +273,15 @@ export const updateApplication = async (id, data) => {
 
   if (Object.prototype.hasOwnProperty.call(data, "selfie_photo")) {
     await ensureColumns([["selfie_photo", "varchar(255) NULL"]]);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, "salary_slip_current")) {
+    await ensureColumns([["salary_slip_current", "varchar(255) NULL"]]);
+  }
+
+  if (data.current_step === "video_kyc_completed" || Object.prototype.hasOwnProperty.call(data, "submit_at")) {
+    await ensureColumns([["submit_at", "datetime NULL"]]);
+    data.submit_at = data.submit_at || new Date();
   }
 
   const fieldMap = {
@@ -47,14 +292,25 @@ export const updateApplication = async (id, data) => {
     email: "email",
     name: "full_name",
     fullName: "full_name",
+    uanNumber: "uan_number",
     dob: "dob",
     pincode: "pincode",
     city: "city",
   };
 
-  const entries = Object.entries(data)
+  const requestedEntries = Object.entries(data)
     .filter(([field]) => field !== "termsAccepted")
     .map(([field, value]) => [fieldMap[field] || field, value]);
+
+  const [existingColumns] = await db.execute(
+    `SELECT COLUMN_NAME
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?`,
+    [APPLICATION_TABLE]
+  );
+  const validColumns = new Set(existingColumns.map((column) => column.COLUMN_NAME));
+  const entries = requestedEntries.filter(([field]) => validColumns.has(field));
 
   if (entries.length === 0) return null;
 
@@ -62,8 +318,10 @@ export const updateApplication = async (id, data) => {
   const values = [...entries.map(([, value]) => value), id];
 
   const [result] = await db.execute(
-    `UPDATE ${APPLICATION_TABLE} SET ${setClause}, last_activity_at = NOW() WHERE id = ?`,
-    values
+    `UPDATE ${APPLICATION_TABLE}
+     SET ${setClause}, last_activity_at = NOW()
+     WHERE id = ? OR application_id = ?`,
+    [...values, id]
   );
 
   return result;
@@ -71,6 +329,8 @@ export const updateApplication = async (id, data) => {
 
 export const getApplicationById = async (id) => {
   if (!id) throw badRequest("Application ID is required");
+
+  await ensureApplicationTable();
 
   const [rows] = await db.execute(
     `SELECT *
@@ -83,6 +343,65 @@ export const getApplicationById = async (id) => {
   return rows[0] || null;
 };
 
+export const getRepaymentContactByPan = async (pan) => {
+  const normalizedPan = String(pan || "").trim().toUpperCase();
+
+  if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(normalizedPan)) {
+    throw badRequest("Enter a valid PAN number");
+  }
+
+  await ensureApplicationTable();
+
+  const [rows] = await db.execute(
+    `SELECT id, application_id, mobile, email
+     FROM ${APPLICATION_TABLE}
+     WHERE pan_number = ?
+     ORDER BY last_activity_at DESC, submit_at DESC, id DESC
+     LIMIT 1`,
+    [normalizedPan]
+  );
+
+  const application = rows[0];
+
+  if (!application) {
+    const error = new Error("No loan application found for this PAN");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (!application.mobile && !application.email) {
+    throw badRequest("Registered mobile or email is not available for this PAN");
+  }
+
+  return {
+    applicationId: application.application_id,
+    phone: application.mobile || "",
+    email: application.email || "",
+  };
+};
+
+export const getApplicationUanById = async (id) => {
+  if (!id) throw badRequest("Application ID is required");
+
+  await ensureColumns([["uan_number", "varchar(20) NULL"]]);
+
+  const [rows] = await db.execute(
+    `SELECT id, application_id, mobile, uan_number
+     FROM ${APPLICATION_TABLE}
+     WHERE id = ? OR application_id = ?
+     LIMIT 1`,
+    [id, id]
+  );
+
+  const application = rows[0];
+  if (!application) return null;
+
+  const existingUanNumber = normalizeUanNumber(application.uan_number);
+  if (existingUanNumber) return existingUanNumber;
+
+  return syncApplicationUan(application, id);
+};
+
 export const createHeroLead = async (data) => {
   const mobile = String(data.mobile || data.phone || "").replace(/\D/g, "");
 
@@ -90,13 +409,15 @@ export const createHeroLead = async (data) => {
     throw badRequest("Invalid mobile number");
   }
 
-  await db.execute(
-    `CREATE TABLE IF NOT EXISTS ${HERO_LEADS_TABLE} (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      mobile VARCHAR(15) NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`
-  );
+  if (!(await tableExists(HERO_LEADS_TABLE))) {
+    await db.execute(
+      `CREATE TABLE ${HERO_LEADS_TABLE} (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        mobile VARCHAR(15) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`
+    );
+  }
 
   const [result] = await db.execute(
     `INSERT INTO ${HERO_LEADS_TABLE} (mobile) VALUES (?)`,
@@ -119,16 +440,18 @@ export const createContactQuery = async (data) => {
   if (!/^[6-9]\d{9}$/.test(mobile)) throw badRequest("Invalid mobile number");
   if (!/^\S+@\S+\.\S+$/.test(email)) throw badRequest("Valid email is required");
 
-  await db.execute(
-    `CREATE TABLE IF NOT EXISTS ${CONTACT_QUERIES_TABLE} (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      full_name VARCHAR(255) NOT NULL,
-      mobile VARCHAR(15) NOT NULL,
-      email VARCHAR(255) NOT NULL,
-      message TEXT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`
-  );
+  if (!(await tableExists(CONTACT_QUERIES_TABLE))) {
+    await db.execute(
+      `CREATE TABLE ${CONTACT_QUERIES_TABLE} (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        full_name VARCHAR(255) NOT NULL,
+        mobile VARCHAR(15) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        message TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`
+    );
+  }
 
   const [columns] = await db.execute(
     `SELECT COLUMN_NAME
@@ -163,6 +486,8 @@ export const createContactQuery = async (data) => {
 
 export const updateWorkDetails = async (id, data) => {
   if (!id) throw badRequest("Application ID is required for update");
+
+  await ensureApplicationTable();
 
   await ensureColumns([
     ["company_name", "varchar(255) NULL"],
@@ -233,6 +558,8 @@ export const updateWorkDetails = async (id, data) => {
 
 export const updateBankDetails = async (id, data) => {
   if (!id) throw badRequest("Application ID is required for update");
+
+  await ensureApplicationTable();
 
   const ifsc = String(data.ifsc || data.ifsc_code || "").trim().toUpperCase();
   const bankName = String(data.bankName || data.bank_name || "").trim();
@@ -324,6 +651,12 @@ export const updateReferenceDetails = async (id, data) => {
 };
 
 export const createApplication = async (data) => {
+  await ensureApplicationTable();
+  await ensureColumns([
+    ["submit_at", "datetime NULL"],
+    ["uan_number", "varchar(20) NULL"],
+  ]);
+
   const employment = data.employment || data.employment_status;
   const salary = data.salary ?? data.monthly_income;
   const phone = data.phone || data.mobile;
@@ -355,14 +688,26 @@ export const createApplication = async (data) => {
     throw badRequest("Invalid Phone");
   }
 
-  const applicationId = `WM${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 90 + 10)}`;
+  const applicationId = `WAQTMN-PD-${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 90 + 10)}`;
 
   const [result] = await db.execute(
     `INSERT INTO ${APPLICATION_TABLE}
-      (application_id, loan_type, mobile, email, pan_number, employment_status, monthly_income, current_step, last_activity_at)
-     VALUES (?, 'payday', ?, ?, ?, ?, ?, 'basic_details', NOW())`,
-    [applicationId, phone, email || null, pan || null, employment, salary]
+      (application_id, loan_type, mobile, email, pan_number, uan_number, employment_status, monthly_income, current_step, submit_at, last_activity_at)
+     VALUES (?, 'payday', ?, ?, ?, ?, ?, ?, 'basic_details', NOW(), NOW())`,
+    [applicationId, phone, email || null, pan || null, null, employment, salary]
   );
+
+  let uanNumber = "";
+  if (process.env.UAN_LOOKUP_SYNC_ON_APPLY === "true") {
+    uanNumber = await getApplicationUanById(applicationId).catch((error) => {
+      console.error("UAN lookup error:", error);
+      return "";
+    });
+  } else if (process.env.UAN_LOOKUP_BACKGROUND_ON_APPLY === "true") {
+    setTimeout(() => getApplicationUanById(applicationId).catch((error) => {
+      console.error("Background UAN lookup error:", error.message);
+    }), 0);
+  }
 
   return {
     id: result.insertId,
@@ -371,5 +716,7 @@ export const createApplication = async (data) => {
     salary,
     phone,
     pan: pan || null,
+    uan_number: uanNumber || null,
+    uanNumber: uanNumber || null,
   };
 };

@@ -12,6 +12,7 @@ import Contact from "./pages/Contact.tsx";
 import Policies from "./pages/Policies.tsx";
 import EmiCalculator from "./pages/Emi-Calculator.tsx";
 import Login from "./User/Login.tsx";
+import LoanDashboard from "./User/LoanDashboard.tsx";
 import Apply from "./User/Apply.tsx";
 import MobileOtp from "./User/MobileOtp.tsx";
 import LoanForm from "./User/LoanForm.tsx";
@@ -28,6 +29,10 @@ import PrivacyPolicy from "./pages/Privacy-Policies.tsx";
 import TermsConditions from "./pages/Term-Conditions.tsx";
 import GrievanceRedressal from "./pages/Grievance-Redressal.tsx";
 import FairPracticesCode from "./pages/Fair-Practices.tsx";
+import Repayment from "./pages/Repayment.tsx";
+import MakePayment from "./pages/MakePayment.tsx";
+import ReloanOffer from "./pages/ReloanOffer.tsx";
+import ScrollToTop from "./Components/ScrollToTop.tsx";
 
 const queryClient = new QueryClient();
 
@@ -37,6 +42,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <ScrollToTop />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/services" element={<Services/>} />
@@ -45,10 +51,14 @@ const App = () => (
           <Route path="/Emi-Calculator" element={<EmiCalculator />} />
           <Route path="/Contact" element={<Contact/>} />
           <Route path="/Policies" element={<Policies/>} />
+          <Route path="/Repayment" element={<Repayment />} />
+          <Route path="/repayment/make-payment" element={<MakePayment />} />
+          <Route path="/repayment/reloan-offer" element={<ReloanOffer />} />
           <Route path="/policies" element={<Policies/>} />
           <Route path="/privacy-policy" element={<Policies/>} />
 
           <Route path="/login" element={<Login />} />
+          <Route path="/user/dashboard" element={<LoanDashboard />} />
 
             {/* USER FLOW */}
             <Route path="/user/apply" element={<Apply />} />

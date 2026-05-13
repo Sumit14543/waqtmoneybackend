@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useState } from "react";
 import { FileText, UploadCloud } from "lucide-react";
 import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
@@ -14,24 +14,13 @@ type DocumentRequirement = {
   required: boolean;
 };
 
-const salariedDocuments: DocumentRequirement[] = [
+const documentRequirements: DocumentRequirement[] = [
   { id: "selfie_photo", label: "Selfie Photo", required: true },
-  { id: "current_salary_slip", label: "Your Current Month Salary Slip", required: true },
-];
-
-const selfEmployedDocuments: DocumentRequirement[] = [
-  { id: "selfie_photo", label: "Selfie Photo", required: true },
-  { id: "bank_statement", label: "Last 6 Months Bank Statement", required: true },
-  { id: "business_proof", label: "Business Proof", required: true },
-  { id: "income_proof", label: "Income Proof", required: true },
-  { id: "address_proof", label: "Address Proof", required: true },
+  { id: "current_salary_slip", label: "Salary Slip", required: false },
 ];
 
 const getStoredApplicationId = () =>
   sessionStorage.getItem("applicationId") || localStorage.getItem("applicationId") || "";
-
-const getStoredEmployment = () =>
-  sessionStorage.getItem("employment") || localStorage.getItem("employment") || "salaried";
 
 const readJsonResponse = async (res: Response) => {
   const text = await res.text();
@@ -47,37 +36,9 @@ const readJsonResponse = async (res: Response) => {
 const SalarySlip = () => {
   const navigate = useNavigate();
   const [applicationId] = useState(getStoredApplicationId);
-  const [employment, setEmployment] = useState(getStoredEmployment);
   const [files, setFiles] = useState<Record<string, File | null>>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const documentRequirements = useMemo(
-    () => (employment === "self" ? selfEmployedDocuments : salariedDocuments),
-    [employment]
-  );
-
-  useEffect(() => {
-    if (!applicationId) return;
-
-    const loadApplication = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/application/${applicationId}`);
-        const result = await readJsonResponse(response);
-        const employmentStatus = result.data?.employment_status;
-
-        if (response.ok && employmentStatus) {
-          setEmployment(employmentStatus);
-          sessionStorage.setItem("employment", employmentStatus);
-          localStorage.setItem("employment", employmentStatus);
-        }
-      } catch (fetchError) {
-        console.error("Application fetch error:", fetchError);
-      }
-    };
-
-    loadApplication();
-  }, [applicationId]);
 
   const handleFileChange = (documentId: string, fileList: FileList | null) => {
     setFiles((currentFiles) => ({
@@ -182,8 +143,11 @@ const SalarySlip = () => {
               <UploadCloud className="h-7 w-7 text-[#8048e2]" />
             </div>
             <h2 className="mt-4 text-xl font-bold text-[#071d3a]">
-              Upload Selfie/SalarySlip
+              Upload Documents
             </h2>
+            <p className="mt-2 text-sm font-medium text-[#52657d]">
+              Selfie verification is required. Salary slip is optional.
+            </p>
            
           </div>
 
@@ -206,7 +170,9 @@ const SalarySlip = () => {
                     <div className="flex items-center justify-between gap-3">
                       <label className="text-sm font-bold text-[#071d3a]">
                         Upload {document.label}
-                        {document.required && <span className="text-red-500"> *</span>}
+                        {!document.required && (
+                          <span className="ml-1 font-semibold text-[#52657d]">(Optional)</span>
+                        )}
                       </label>
                     </div>
                     <input

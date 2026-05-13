@@ -1,14 +1,26 @@
-export const errorHandler = (err, req, res, next) => {
-  console.error("Error:", err);
+import logger from "../utils/logger.js";
 
-  const statusCode = err.statusCode || err.status || 500;
+export const errorHandler = (err, req, res, next) => {
+  const isProduction = process.env.NODE_ENV === "production";
+  logger.error("Error:", isProduction ? err.message : err);
+
+  const isDbConnectionError =
+    err?.code === "ECONNREFUSED" ||
+    err?.code === "PROTOCOL_CONNECTION_LOST" ||
+    err?.fatal === true;
+
+  const statusCode = isDbConnectionError ? 503 : err.statusCode || err.status || 500;
 
   const response = {
     success: false,
-    message: err.message || "Something went wrong",
+    message: isDbConnectionError
+      ? isProduction
+        ? "Service temporarily unavailable. Please try again shortly."
+        : "Database is not reachable. Please start MySQL and try again."
+      : err.message || "Something went wrong",
   };
 
-  if (err.details) {
+  if (err.details && !isProduction) {
     response.details = err.details;
   }
 

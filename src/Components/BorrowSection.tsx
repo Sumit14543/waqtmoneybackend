@@ -54,7 +54,7 @@ const BorrowSection = () => (
 
         <div className="hidden lg:block">
           <img
-            src="borrow-lifestyle.jpg"
+            src="/borrow-lifestyle.jpg"
             alt="Person managing finances"
             loading="lazy"
             width={640}

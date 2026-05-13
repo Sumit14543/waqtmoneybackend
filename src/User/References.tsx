@@ -181,6 +181,7 @@ const References = () => {
             </label>
             <input
               name={nameKey}
+              autoComplete="name"
               value={form[nameKey]}
               onChange={handleChange}
               placeholder="Enter full name"
@@ -196,6 +197,7 @@ const References = () => {
             <input
               name={phoneKey}
               inputMode="numeric"
+              autoComplete="tel"
               value={form[phoneKey]}
               onChange={handleChange}
               placeholder="Enter 10-digit mobile number"
@@ -210,6 +212,7 @@ const References = () => {
             </label>
             <select
               name={relationKey}
+              autoComplete="off"
               value={form[relationKey]}
               onChange={handleChange}
               className={`${inputClass} bg-white`}

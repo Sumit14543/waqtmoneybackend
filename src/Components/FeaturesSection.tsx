@@ -30,7 +30,7 @@ const FeaturesSection = () => {
           className="text-center mb-14"
         >
           <h2 className="font-display text-3xl md:text-4xl font-bold mb-4">
-            Why Choose <span className="text-gradient">WaqtMoney?</span>
+            Why Choose <span className="text-gradient">Waqt Money?</span>
           </h2>
           <p className="text-muted-foreground max-w-md mx-auto">Simple, transparent, and designed to work for you.</p>
         </motion.div>

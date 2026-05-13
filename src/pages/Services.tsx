@@ -1,6 +1,7 @@
 import Footer from "@/Components/Footer";
 import Navbar from "@/Components/Navbar";
 import { Banknote, Clock, ShieldCheck, Wallet, FileCheck, Headphones } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const services = [
   {
@@ -59,7 +60,7 @@ const Services = () => {
           </h1>
 
           <p className="mt-4 text-lg text-muted-foreground">
-           WaqtMoney offers fast, transparent, and stress-free payday loans designed for salaried
+           Waqt Money offers fast, transparent, and stress-free payday loans designed for salaried
             professionals. Bridge the gap between paydays without the paperwork.
           </p>
         </div>
@@ -100,12 +101,12 @@ const Services = () => {
             </p>
           </div>
 
-          <a
-            href="/user/apply"
+          <Link
+            to="/user/apply"
             className="inline-flex items-center justify-center rounded-full bg-background px-8 py-3 text-sm font-semibold text-primary shadow-lg transition-transform hover:scale-105"
           >
             Apply for Loan
-          </a>
+          </Link>
         </div>
 
       </div>

@@ -353,8 +353,8 @@ const VideoVerification: React.FC = () => {
           )}
         </div>
 
-        <div className="mt-9 flex flex-col items-center">
-          <div className="relative aspect-[3/4] w-full max-w-[560px] overflow-hidden rounded-[18px] border border-gray-300 bg-gray-200 shadow-xl sm:aspect-[4/3] md:h-[420px] md:aspect-auto">
+        <div className="mt-6 flex flex-col items-center sm:mt-9">
+          <div className="relative aspect-[4/5] w-full max-w-[560px] overflow-hidden rounded-[18px] border border-gray-300 bg-gray-200 shadow-xl sm:aspect-[4/3] md:h-[420px] md:aspect-auto">
             {!videoUrl ? (
               <video
                 ref={videoRef}
@@ -386,16 +386,25 @@ const VideoVerification: React.FC = () => {
               </div>
             )}
 
-            <div className="absolute bottom-3 left-3 right-3 rounded-[14px] bg-black/75 p-3 text-white sm:bottom-5 sm:left-5 sm:right-5 sm:p-4">
-              <h4 className="text-yellow-300 font-bold flex items-center gap-2 text-[16px]">
-                📢 Say this phrase:
+            <div className="absolute bottom-3 left-3 right-3 hidden rounded-[14px] bg-black/75 p-3 text-white sm:bottom-5 sm:left-5 sm:right-5 sm:block sm:p-4">
+              <h4 className="flex items-center gap-2 text-[16px] font-bold text-yellow-300">
+                Say this phrase:
               </h4>
-              <p className="mt-2 text-[14px] leading-6">‘{phrase}’</p>
+              <p className="mt-2 text-[14px] leading-6">"{phrase}"</p>
             </div>
           </div>
 
+          <div className="mt-3 w-full rounded-2xl border border-purple-100 bg-purple-50/80 p-3 text-left text-slate-800 sm:hidden">
+            <h4 className="text-sm font-extrabold text-purple-700">
+              Say this phrase:
+            </h4>
+            <p className="mt-2 text-[13px] font-medium leading-5">
+              "{phrase}"
+            </p>
+          </div>
+
           {recording && (
-            <div className="mt-4 text-red-600 font-bold">
+            <div className="mt-3 text-center text-sm font-bold text-red-600 sm:mt-4 sm:text-base">
               Recording... {seconds}s left
             </div>
           )}
@@ -458,3 +467,4 @@ const VideoVerification: React.FC = () => {
 };
 
 export default VideoVerification;
+

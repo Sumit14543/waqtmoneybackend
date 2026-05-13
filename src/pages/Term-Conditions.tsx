@@ -18,7 +18,7 @@ const TermsConditions = () => {
 
           {/* INTRO */}
           <p className="mb-5">
-            Welcome to <strong>WaqtMoney</strong>, a digital platform providing fast and 
+            Welcome to <strong>Waqt Money</strong>, a digital platform providing fast and 
             secure payday loan services. By accessing or using our website, mobile 
             application, or services, you agree to comply with and be bound by these 
             Terms & Conditions.
@@ -47,7 +47,7 @@ const TermsConditions = () => {
           </h2>
 
           <p className="mb-6">
-            WaqtMoney provides instant payday loan services through its digital platform. 
+            Waqt Money provides instant payday loan services through its digital platform. 
             Loan approval, amount, tenure, and interest rates are subject to eligibility 
             and verification checks.
           </p>
@@ -70,7 +70,7 @@ const TermsConditions = () => {
           </h2>
 
           <p className="mb-4">
-            All loans provided through WaqtMoney are subject to approval and governed 
+            All loans provided through Waqt Money are subject to approval and governed 
             by agreed terms including interest rate, tenure, and repayment schedule.
           </p>
 
@@ -86,7 +86,7 @@ const TermsConditions = () => {
           </h2>
 
           <p className="mb-6">
-            WaqtMoney may charge processing fees, interest, or service charges 
+            Waqt Money may charge processing fees, interest, or service charges 
             depending on the loan product. All applicable charges will be clearly 
             communicated before loan acceptance.
           </p>
@@ -118,7 +118,7 @@ const TermsConditions = () => {
           </h2>
 
           <p className="mb-6">
-            WaqtMoney shall not be liable for any indirect, incidental, or 
+            Waqt Money shall not be liable for any indirect, incidental, or 
             consequential damages arising from the use of our platform or services.
           </p>
 
@@ -138,7 +138,7 @@ const TermsConditions = () => {
           </h2>
 
           <p className="mb-6">
-            WaqtMoney may update these Terms & Conditions at any time. Continued use 
+            Waqt Money may update these Terms & Conditions at any time. Continued use 
             of the platform indicates your acceptance of the updated terms.
           </p>
 

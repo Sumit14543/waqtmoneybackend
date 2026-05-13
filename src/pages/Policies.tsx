@@ -107,7 +107,7 @@ export default function Policies() {
             </h1>
 
             <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-              This policy explains how WaqtMoney collects, uses, protects, and
+              This policy explains how Waqt Money collects, uses, protects, and
               shares your information when you use our website and loan services.
             </p>
 
@@ -116,7 +116,7 @@ export default function Policies() {
                 Effective Date: 04 May 2026
               </span>
               <span className="rounded-full border border-orange-100 bg-white px-4 py-2 font-medium text-slate-700 shadow-sm">
-                WaqtMoney Services
+                Waqt Money Services
               </span>
             </div> */}
           </div>

@@ -114,7 +114,8 @@ const BankDetails = () => {
   }, [form.ifsc]);
 
   const handleChange = (e: any) => {
-    let { name, value } = e.target;
+    const { name } = e.target;
+    let { value } = e.target;
 
     // restrict account number to digits only
     if (name === "accountNumber") {
@@ -131,7 +132,7 @@ const BankDetails = () => {
   };
 
   const validate = () => {
-    let newErrors: any = {};
+    const newErrors: any = {};
 
     // Bank Name
     if (!form.bankName.trim()) {
@@ -257,6 +258,7 @@ const BankDetails = () => {
               <label className="text-sm font-bold text-[#071d3a]">IFSC Code</label>
               <input
                 name="ifsc"
+                autoComplete="off"
                 value={form.ifsc}
                 onChange={handleChange}
                 maxLength={11}
@@ -272,6 +274,7 @@ const BankDetails = () => {
               <label className="text-sm font-bold text-[#071d3a]">Bank Name</label>
               <input
                 name="bankName"
+                autoComplete="organization"
                 value={ifscLoading ? "Fetching..." : form.bankName}
                 readOnly
                 className={`${inputClass} bg-[#f8fafc]`}
@@ -284,6 +287,7 @@ const BankDetails = () => {
               <label className="text-sm font-bold text-[#071d3a]">Branch Name</label>
               <input
                 name="branchName"
+                autoComplete="address-level2"
                 value={ifscLoading ? "Fetching..." : form.branchName}
                 readOnly
                 className={`${inputClass} bg-[#f8fafc]`}
@@ -301,7 +305,7 @@ const BankDetails = () => {
             {/* Holder Name */}
             <div className="mb-4">
               <label className="text-sm font-bold text-[#071d3a]">Account Holder Name</label>
-              <input name="holderName" value={form.holderName} onChange={handleChange} className={inputClass} />
+              <input name="holderName" autoComplete="name" value={form.holderName} onChange={handleChange} className={inputClass} />
               {errors.holderName && <p className="text-red-500 text-xs">{errors.holderName}</p>}
             </div>
 
@@ -310,6 +314,7 @@ const BankDetails = () => {
               <label className="text-sm font-bold text-[#071d3a]">Account Number</label>
               <input
                 name="accountNumber"
+                autoComplete="off"
                 value={form.accountNumber}
                 onChange={handleChange}
                 maxLength={18}

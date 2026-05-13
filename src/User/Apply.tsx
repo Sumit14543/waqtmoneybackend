@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRightCircle, CalendarDays, ChevronDown, FileText, Lock, Zap } from "lucide-react";
 import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
+import BrandLogo from "@/Components/BrandLogo";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
 
@@ -31,6 +32,9 @@ const Apply = () => {
   const [agree, setAgree] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resumePrompt, setResumePrompt] = useState(false);
+  const [resumeLoading, setResumeLoading] = useState(false);
+  const [savedApplicationId, setSavedApplicationId] = useState("");
 
   const digitsOnly = (value: string) => value.replace(/\D/g, "");
 
@@ -89,6 +93,122 @@ const Apply = () => {
     }
   };
 
+  const clearApplicationSession = () => {
+    [
+      "applicationId",
+      "applyPhone",
+      "applyEmail",
+      "applyPan",
+      "employment",
+      "otpRequired",
+      "otpDelivery",
+      "otpChannels",
+      "panVerification",
+      "aadhaarMasked",
+    ].forEach((key) => {
+      sessionStorage.removeItem(key);
+      localStorage.removeItem(key);
+    });
+  };
+
+  const getResumePath = (currentStep?: string) => {
+    const step = String(currentStep || "").toLowerCase();
+    const routes: Record<string, string> = {
+      basic_details: "/user/pan-verification",
+      pan_verify: "/user/kyc-aadhaar",
+      aadhaar_verify: "/user/kyc-aadhaar",
+      aadhaar_callback: "/user/kyc-aadhaar",
+      react_aadhaar_verify: "/user/kyc-aadhaar",
+      react_aadhaar_callback: "/user/kyc-aadhaar",
+      work_details: "/user/work-details",
+      bank_details: "/user/bank-details",
+      references: "/user/references",
+      upload_docs: "/user/salary-slip",
+      documents_uploaded: "/user/customer-video-kyc",
+      video_kyc_completed: "/user/loan-status",
+    };
+
+    return routes[step] || "/user/otp";
+  };
+
+  const handleApplyStart = () => {
+    const existingApplicationId =
+      sessionStorage.getItem("applicationId") || localStorage.getItem("applicationId") || "";
+
+    if (existingApplicationId) {
+      setSavedApplicationId(existingApplicationId);
+      setResumePrompt(true);
+      return;
+    }
+
+    setShowIntro(false);
+  };
+
+  const handleFreshApplication = () => {
+    clearApplicationSession();
+    setResumePrompt(false);
+    setSavedApplicationId("");
+    setEmployment("salaried");
+    setSalary("");
+    setLoanAmount("");
+    setPurpose("Marriage");
+    setHasLoan("no");
+    setPhone("");
+    setEmail("");
+    setAgree(true);
+    setError("");
+    setShowIntro(false);
+  };
+
+  const handleResumeApplication = async () => {
+    if (!savedApplicationId || resumeLoading) return;
+
+    setResumeLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/application/${savedApplicationId}`);
+      const result = await readJsonResponse(response);
+
+      if (!response.ok || !result.data) {
+        clearApplicationSession();
+        setResumePrompt(false);
+        setShowIntro(false);
+        return;
+      }
+
+      const application = result.data;
+      sessionStorage.setItem("applicationId", String(savedApplicationId));
+      localStorage.setItem("applicationId", String(savedApplicationId));
+
+      if (application.mobile) {
+        sessionStorage.setItem("applyPhone", String(application.mobile));
+        localStorage.setItem("applyPhone", String(application.mobile));
+      }
+
+      if (application.email) {
+        sessionStorage.setItem("applyEmail", String(application.email));
+        localStorage.setItem("applyEmail", String(application.email));
+      }
+
+      if (application.employment_status) {
+        sessionStorage.setItem("employment", String(application.employment_status));
+        localStorage.setItem("employment", String(application.employment_status));
+      }
+
+      if (application.pan_number) {
+        sessionStorage.setItem("applyPan", String(application.pan_number));
+      }
+
+      navigate(getResumePath(application.current_step));
+    } catch (fetchError) {
+      console.error("Resume application error:", fetchError);
+      setError("Unable to resume application. Please try fresh.");
+    } finally {
+      setResumeLoading(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (loading) return;
 
@@ -131,7 +251,7 @@ const Apply = () => {
         return;
       }
 
-      const applicationId = appResult.data?.id;
+      const applicationId = appResult.data?.applicationId || appResult.data?.id;
 
       if (!applicationId) {
         setError("Application ID not received from server");
@@ -289,11 +409,7 @@ const Apply = () => {
         <main className="px-4 pb-12 pt-24">
         <div className="mx-auto flex min-h-[calc(100vh-6rem)] w-full max-w-[520px] flex-col overflow-hidden rounded-[28px] bg-white shadow-xl shadow-purple-100/70">
           <section className="rounded-b-[28px] bg-[linear-gradient(135deg,#f1edff,#fff7ed)] px-6 pb-7 pt-6 text-center">
-            <img
-              src="/waqt-money-logo-img.png"
-              alt="Waqt Money"
-              className="mx-auto h-20 w-auto object-contain sm:h-24"
-            />
+            <BrandLogo className="mx-auto h-12 w-auto object-contain" priority />
 
             <p className="mx-auto mt-4 max-w-sm text-base font-semibold leading-7 text-slate-950 sm:text-lg">
               Instant Online Personal Loan for Salaried Employees
@@ -302,19 +418,49 @@ const Apply = () => {
             <p className="mt-4 text-sm font-bold text-slate-950">
               up to{" "}
               <span className="align-middle text-3xl font-extrabold text-purple-700 sm:text-4xl">
-                Rs 2,00,000
+                Rs 1,00,000
               </span>
             </p>
 
             <button
               type="button"
-              onClick={() => setShowIntro(false)}
+              onClick={handleApplyStart}
               className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-slate-950 px-6 text-base font-bold text-white shadow-lg shadow-purple-200 transition hover:bg-purple-700"
             >
               Apply Now
               <ArrowRightCircle className="h-5 w-5" />
             </button>
           </section>
+
+          {resumePrompt && (
+            <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/45 px-4 pb-4 backdrop-blur-sm sm:items-center sm:pb-0">
+              <div className="w-full max-w-md rounded-3xl bg-white p-6 text-left shadow-2xl">
+                <h2 className="text-xl font-extrabold text-slate-950">
+                  Resume application?
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  We found an unfinished application. You can continue from where you stopped or start a fresh one.
+                </p>
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={handleFreshApplication}
+                    className="h-12 rounded-full border border-slate-200 bg-white text-sm font-bold text-slate-800 transition hover:bg-slate-50"
+                  >
+                    Start Fresh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResumeApplication}
+                    disabled={resumeLoading}
+                    className="h-12 rounded-full bg-purple-600 text-sm font-bold text-white transition hover:bg-purple-700 disabled:opacity-60"
+                  >
+                    {resumeLoading ? "Resuming..." : "Resume"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <section className="flex-1 px-4 py-5">
             <div className="space-y-4">
@@ -525,6 +671,7 @@ const Apply = () => {
                     <input
                       type="text"
                       inputMode="numeric"
+                      autoComplete="off"
                       value={salary}
                       onChange={(e) => setSalary(formatAmount(e.target.value))}
                       placeholder="10,000"
@@ -545,6 +692,7 @@ const Apply = () => {
                     <input
                       type="text"
                       inputMode="numeric"
+                      autoComplete="off"
                       value={loanAmount}
                       onChange={(e) => setLoanAmount(formatAmount(e.target.value))}
                       placeholder="5,000"
@@ -561,6 +709,7 @@ const Apply = () => {
                   <div className="relative mt-3">
                     <select
                       value={purpose}
+                      autoComplete="off"
                       onChange={(e) => setPurpose(e.target.value)}
                       className="h-[54px] w-full appearance-none rounded-lg border border-[#d8c5ff] bg-white px-4 pr-10 text-base font-semibold text-[#071d3a] outline-none focus:border-[#8048e2]"
                     >
@@ -621,6 +770,7 @@ const Apply = () => {
                     <input
                       type="text"
                       inputMode="numeric"
+                      autoComplete="tel"
                       value={phone}
                       onChange={(e) => setPhone(digitsOnly(e.target.value).slice(0, 10))}
                       placeholder="9976237656"
@@ -636,6 +786,7 @@ const Apply = () => {
 
                   <input
                     type="email"
+                    autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="test@gmail.com"
@@ -649,6 +800,7 @@ const Apply = () => {
               <label className="mt-5 flex items-start gap-3 text-sm font-medium leading-6 text-[#52657d]">
                 <input
                   type="checkbox"
+                  autoComplete="off"
                   checked={agree}
                   onChange={() => setAgree(!agree)}
                   className="mt-1 h-4 w-4 rounded border-[#b9c8dc] accent-[#8048e2]"

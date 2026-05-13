@@ -4,14 +4,19 @@ import multer from "multer";
 import { fileURLToPath } from "url";
 import {
   applyLoan,
+  createRepaymentPaymentOrder,
+  getApplicationUan,
   getIfscDetails,
   getApp,
+  getRepaymentPaymentStatus,
+  sendRepaymentOtp,
   saveContactQuery,
   saveHeroLead,
   updateApp,
   updateBankDetailsApp,
   updateReferenceDetailsApp,
   updateWorkDetailsApp,
+  verifyRepaymentOtp,
 } from "../controllers/application.controller.js";
 
 const router = express.Router();
@@ -44,15 +49,20 @@ const fallbackDocumentColumns = [
 router.post("/apply", applyLoan);
 router.post("/lead", saveHeroLead);
 router.post("/contact", saveContactQuery);
+router.post("/repayment/send-otp", sendRepaymentOtp);
+router.post("/repayment/verify-otp", verifyRepaymentOtp);
+router.post("/repayment/create-payment-order", createRepaymentPaymentOrder);
+router.get("/repayment/payment-status/:orderId", getRepaymentPaymentStatus);
 router.get("/ifsc/:ifsc", getIfscDetails);
+router.get("/uan/:id", getApplicationUan);
 router.get("/:id", getApp);
 router.put("/update", updateApp);
 router.put("/work-details", updateWorkDetailsApp);
 router.put("/bank-details", updateBankDetailsApp);
 router.put("/reference-details", updateReferenceDetailsApp);
 
-// Multi-file upload for docs
-router.post("/upload-docs", upload.array("files", 10), (req, res, next) => {
+// Selfie verification plus one optional salary slip upload
+router.post("/upload-docs", upload.any(), (req, res, next) => {
   const parseDocumentTypes = () => {
     try {
       return JSON.parse(req.body.documentTypes || "[]");
@@ -66,7 +76,10 @@ router.post("/upload-docs", upload.array("files", 10), (req, res, next) => {
 
     req.files.forEach((file, index) => {
       const documentType = documentTypes[index] || {};
-      const columnName = documentColumnMap[documentType.id] || fallbackDocumentColumns[index];
+      const columnName =
+        documentColumnMap[documentType.id] ||
+        documentColumnMap[file.fieldname] ||
+        fallbackDocumentColumns[index];
 
       if (columnName) {
         req.body[columnName] = `uploads/${file.filename}`;

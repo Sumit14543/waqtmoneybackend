@@ -18,7 +18,7 @@ const GrievanceRedressal = () => {
 
           {/* INTRO */}
           <p className="mb-5">
-            At <strong>WaqtMoney</strong>, we are committed to providing a seamless 
+            At <strong>Waqt Money</strong>, we are committed to providing a seamless 
             and transparent experience for our users. If you have any concerns, 
             complaints, or grievances related to our payday loan services, we 
             encourage you to reach out to us through the channels mentioned below.
@@ -56,7 +56,7 @@ const GrievanceRedressal = () => {
           </p>
 
           <ul className="list-disc pl-6 mb-6 space-y-2">
-            <li><strong>Name:</strong> Grievance Officer – WaqtMoney</li>
+            <li><strong>Name:</strong> Grievance Officer – Waqt Money</li>
             <li><strong>Email:</strong> grievance@waqtmoney.com</li>
             <li>Resolution Time: Within 7 working days</li>
           </ul>
@@ -102,7 +102,7 @@ const GrievanceRedressal = () => {
           </h2>
 
           <p className="mb-6">
-            WaqtMoney follows fair practices and ensures that all complaints 
+            Waqt Money follows fair practices and ensures that all complaints 
             are handled with transparency, confidentiality, and in compliance 
             with applicable financial regulations.
           </p>

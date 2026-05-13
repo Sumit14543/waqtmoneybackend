@@ -18,7 +18,7 @@ const FairPracticesCode = () => {
 
           {/* INTRO */}
           <p className="mb-5">
-            <strong>WaqtMoney</strong> is committed to ensuring transparency, fairness, 
+            <strong>Waqt Money</strong> is committed to ensuring transparency, fairness, 
             and ethical practices while offering instant payday loan services. 
             This Fair Practices Code is based on applicable regulatory guidelines 
             and is followed in coordination with our partner NBFCs/lenders.
@@ -89,7 +89,7 @@ const FairPracticesCode = () => {
           </h2>
 
           <p className="mb-6">
-            WaqtMoney does not discriminate based on gender, religion, caste, 
+            Waqt Money does not discriminate based on gender, religion, caste, 
             or any other personal factor while evaluating loan applications.
           </p>
 
@@ -110,7 +110,7 @@ const FairPracticesCode = () => {
           </h2>
 
           <p className="mb-6">
-            WaqtMoney works in partnership with RBI-registered NBFCs/lenders and 
+            Waqt Money works in partnership with RBI-registered NBFCs/lenders and 
             ensures compliance with applicable laws, guidelines, and industry standards.
           </p>
 

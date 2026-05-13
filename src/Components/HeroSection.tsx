@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ArrowRight, Shield, Clock, CheckCircle2, PhoneCall, X } from "lucide-react";
+import { Link } from "react-router-dom";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
 
 const stats = [
@@ -85,7 +86,7 @@ const HeroSection = () => {
             <p className="mx-auto mb-8 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg xl:mx-0 xl:max-w-lg">
               Instant personal loans with zero paperwork, no hidden charges. Apply in 2 minutes. Funds disbursed within 5 minutes.
             </p>
-            <div className="mx-auto mb-3 flex w-full max-w-md flex-col items-stretch gap-2 rounded-2xl border border-gray-200 bg-white p-2 shadow-md transition-all hover:shadow-lg sm:flex-row sm:items-center sm:gap-0 sm:rounded-full xl:mx-0">
+            <div className="mx-auto mb-3 flex w-full max-w-md flex-col items-stretch gap-2 transition-all sm:flex-row sm:items-center sm:gap-0 sm:rounded-full sm:border sm:border-gray-200 sm:bg-white sm:p-2 sm:shadow-md sm:hover:shadow-lg xl:mx-0">
 
               {/* Input */}
               <input
@@ -97,7 +98,7 @@ const HeroSection = () => {
                   setError("");
                 }}
                 placeholder="Enter your mobile number"
-                className="min-w-0 flex-1 bg-transparent px-5 py-3 text-sm text-gray-700 outline-none placeholder-black"
+                className="hidden min-w-0 flex-1 bg-transparent px-5 py-3 text-sm text-gray-700 outline-none placeholder-black sm:block"
               />
 
               {/* Button */}
@@ -105,15 +106,23 @@ const HeroSection = () => {
                 type="button"
                 onClick={handleLeadSubmit}
                 disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-8 py-3 font-semibold text-white transition-all hover:scale-105 disabled:opacity-60 sm:w-auto sm:rounded-full"
+                className="hidden w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-8 py-3 font-semibold text-white transition-all hover:scale-105 disabled:opacity-60 sm:flex sm:w-auto sm:rounded-full"
               >
                 {loading ? "Submitting..." : "Apply Now"}
                 {!loading && <ArrowRight className="w-4 h-4" />}
               </button>
 
+              <Link
+                to="/user/apply"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-8 py-3 font-semibold text-white transition-all hover:scale-105 sm:hidden"
+              >
+                Apply Now
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+
             </div>
             {error && (
-              <p className="mx-auto mb-5 max-w-md rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-600 xl:mx-0">
+              <p className="mx-auto mb-5 hidden max-w-md rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-600 sm:block xl:mx-0">
                 {error}
               </p>
             )}
@@ -162,7 +171,7 @@ const HeroSection = () => {
               <div className="relative w-full">
                 <div className="absolute -inset-3 rounded-3xl bg-primary/5 blur-3xl sm:-inset-4" />
                 <img
-                  src="landing_banner_img.png"
+                  src="/landing_banner_img.png"
                   alt="Happy customer"
                   width={700}
                   height={700}

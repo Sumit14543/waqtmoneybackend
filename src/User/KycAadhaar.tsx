@@ -326,6 +326,7 @@ const KycAadhaar = () => {
 
             <input
               type="text"
+              autoComplete="off"
               value={formatAadhaar(aadhaar)}
               onChange={(e) => handleChange(e.target.value)}
               maxLength={14} // includes spaces

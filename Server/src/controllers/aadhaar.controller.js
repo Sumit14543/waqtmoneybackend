@@ -3,6 +3,7 @@ import db from "../configs/db.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
 const CLIENT_BASE_URL = process.env.CLIENT_BASE_URL || "http://localhost:8080";
+const SUCCESS_REDIRECT_PATH = "/user/work-details";
 
 const badRequest = (message) => {
   const error = new Error(message);
@@ -171,7 +172,7 @@ export const handleAadhaarCallback = async (req, res, next) => {
       [application.id]
     );
 
-    return res.redirect(`${CLIENT_BASE_URL}/user/company-details?aadhaar=verified`);
+    return res.redirect(`${CLIENT_BASE_URL}${SUCCESS_REDIRECT_PATH}?aadhaar=verified`);
   } catch (error) {
     console.error("Aadhaar callback error:", error);
     return res.redirect(`${CLIENT_BASE_URL}/user/kyc-aadhaar?aadhaar=failed`);

@@ -14,7 +14,9 @@ services:
       - key: CLIENT_BASE_URL
         value: https://waqtmoney.com
       - key: API_PUBLIC_BASE_URL
-        sync: false
+        value: https://waqtmoney-api.onrender.com
+      - key: CORS_ORIGINS
+        value: https://waqtmoney.com,https://www.waqtmoney.com
       - key: DB_HOST
         sync: false
       - key: DB_PORT
@@ -29,9 +31,23 @@ services:
         sync: false
       - key: APP_SECRET_KEY
         sync: false
+      - key: CRM_API_KEY
+        sync: false
       - key: BIFROST_API_TOKEN
         sync: false
       - key: BIFROST_REACT_API_TOKEN
+        sync: false
+      - key: CASHFREE_ENV
+        value: production
+      - key: CASHFREE_CLIENT_ID
+        sync: false
+      - key: CASHFREE_CLIENT_SECRET
+        sync: false
+      - key: CASHFREE_ALLOWED_ORIGIN
+        value: https://waqtmoney.com
+      - key: CASHFREE_RETURN_URL
+        value: https://waqtmoney.com/repayment/make-payment?order_id={order_id}&application_id={application_id}
+      - key: CASHFREE_NOTIFY_URL
         sync: false
       - key: SMTP_HOST
         sync: false

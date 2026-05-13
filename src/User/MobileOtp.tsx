@@ -246,6 +246,7 @@ const MobileOtp = () => {
                     ref={(el) => (inputsRef.current[index] = el!)}
                     type="text"
                     inputMode="numeric"
+                    autoComplete={index === 0 ? "one-time-code" : "off"}
                     maxLength={1}
                     value={value}
                     onChange={(event) => handleChange(event.target.value, index)}

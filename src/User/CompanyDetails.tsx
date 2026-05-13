@@ -80,7 +80,7 @@ const CompanyDetails = () => {
   };
 
   const validate = () => {
-    let newErrors: any = {};
+    const newErrors: any = {};
 
     if (!form.company.trim()) newErrors.company = "Company name is required";
     if (!form.designation.trim()) newErrors.designation = "Designation is required";
@@ -206,14 +206,14 @@ const CompanyDetails = () => {
             {/* Company */}
             <div className="mb-4">
               <label className="text-sm font-bold text-[#071d3a]">Company Name</label>
-              <input name="company" value={form.company} onChange={handleChange} className={inputClass} />
+              <input name="company" autoComplete="organization" value={form.company} onChange={handleChange} className={inputClass} />
               {errors.company && <p className="text-red-500 text-xs">{errors.company}</p>}
             </div>
 
             {/* Designation */}
             <div className="mb-4">
               <label className="text-sm font-bold text-[#071d3a]">Designation</label>
-              <input name="designation" value={form.designation} onChange={handleChange} className={inputClass} />
+              <input name="designation" autoComplete="organization-title" value={form.designation} onChange={handleChange} className={inputClass} />
               {errors.designation && <p className="text-red-500 text-xs">{errors.designation}</p>}
             </div>
 
@@ -222,7 +222,7 @@ const CompanyDetails = () => {
               <label className="text-sm font-bold text-[#071d3a]">
                 Office Email <span className="text-[#718096]">(optional)</span>
               </label>
-              <input name="email" type="email" value={form.email} onChange={handleChange} className={inputClass} />
+              <input name="email" type="email" autoComplete="email" value={form.email} onChange={handleChange} className={inputClass} />
               {errors.email && <p className="text-red-500 text-xs">{errors.email}</p>}
             </div>
 
@@ -257,7 +257,7 @@ const CompanyDetails = () => {
             {/* Address */}
             <div className="mb-4">
               <label className="text-sm font-bold text-[#071d3a]">Office Address</label>
-              <textarea name="address" rows={3} value={form.address} onChange={handleChange} className={inputClass} />
+              <textarea name="address" rows={3} autoComplete="street-address" value={form.address} onChange={handleChange} className={inputClass} />
               {errors.address && <p className="text-red-500 text-xs">{errors.address}</p>}
             </div>
 
@@ -268,6 +268,7 @@ const CompanyDetails = () => {
                 name="pincode"
                 type="text"
                 inputMode="numeric"
+                autoComplete="postal-code"
                 maxLength={6}
                 value={form.pincode}
                 onChange={(event) => {
@@ -283,7 +284,7 @@ const CompanyDetails = () => {
             {/* Education */}
             <div className="mb-4">
               <label className="text-sm font-bold text-[#071d3a]">Education</label>
-              <select name="education" value={form.education} onChange={handleChange} className={inputClass}>
+              <select name="education" autoComplete="off" value={form.education} onChange={handleChange} className={inputClass}>
                 <option value="">Select</option>
                 <option>10th</option>
                 <option>12th</option>
@@ -299,6 +300,7 @@ const CompanyDetails = () => {
               <input
                 name="experience"
                 type="number"
+                autoComplete="off"
                 value={form.experience}
                 onChange={handleChange}
                 className={inputClass}

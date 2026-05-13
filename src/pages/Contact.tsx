@@ -179,6 +179,7 @@ const Contact = () => {
 
                 <input
                   type="text"
+                  autoComplete="name"
                   placeholder="Full Name"
                   value={formData.fullName}
                   onChange={(event) => updateField("fullName", event.target.value)}
@@ -196,6 +197,7 @@ const Contact = () => {
 
                 <input
                   type="tel"
+                  autoComplete="tel"
                   placeholder="Mobile Number"
                   value={formData.mobile}
                   onChange={(event) => updateField("mobile", event.target.value)}
@@ -213,6 +215,7 @@ const Contact = () => {
 
                 <input
                   type="email"
+                  autoComplete="email"
                   placeholder="Email Address"
                   value={formData.email}
                   onChange={(event) => updateField("email", event.target.value)}
@@ -230,6 +233,7 @@ const Contact = () => {
 
                 <textarea
                   rows={4}
+                  autoComplete="off"
                   placeholder="Your message "
                   value={formData.message}
                   onChange={(event) => updateField("message", event.target.value)}

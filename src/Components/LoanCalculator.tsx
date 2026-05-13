@@ -3,6 +3,7 @@ import { Slider } from "@/Components/ui/slider";
 import { Button } from "@/Components/ui/button";
 import { CheckCircle2, ArrowRight } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { Link } from "react-router-dom";
 
 const LoanCalculator = () => {
   const [amount, setAmount] = useState(20000);
@@ -172,9 +173,11 @@ const LoanCalculator = () => {
                 </p>
               </div>
 
-              <Button className="w-full mt-4 bg-purple-600 text-white rounded-xl font-semibold hover:opacity-90">
-                Get Started{" "}
-                <ArrowRight className="w-4 h-4 ml-2" />
+              <Button asChild className="w-full mt-4 bg-purple-600 text-white rounded-xl font-semibold hover:opacity-90">
+                <Link to="/user/apply">
+                  Get Started{" "}
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Link>
               </Button>
             </div>
 

@@ -21,7 +21,7 @@ const formatINR = (value: number) =>
   }).format(value || 0);
 
 export default function EmiCalculator() {
-  const [amount, setAmount] = useState(10000);
+  const [amount, setAmount] = useState(20000);
   const [tenure, setTenure] = useState(30);
   const [rate, setRate] = useState(1);
 
@@ -79,7 +79,7 @@ export default function EmiCalculator() {
                     <input
                       type="range"
                       min={5000}
-                      max={100000}
+                      max={200000}
                       step={1000}
                       value={amount}
                       onChange={(e) => setAmount(Number(e.target.value))}
@@ -89,7 +89,7 @@ export default function EmiCalculator() {
                     <input
                       type="number"
                       min={5000}
-                      max={100000}
+                      max={200000}
                       value={amount}
                       onChange={(e) => setAmount(Number(e.target.value))}
                       className="mt-3 h-11 w-full rounded-lg border border-purple-100 bg-purple-50/50 px-3 text-center text-sm font-semibold text-slate-900 outline-none transition focus:border-purple-500 focus:bg-white"
@@ -106,7 +106,7 @@ export default function EmiCalculator() {
                     <input
                       type="range"
                       min={7}
-                      max={40}
+                      max={45}
                       value={tenure}
                       onChange={(e) => setTenure(Number(e.target.value))}
                       className="w-full accent-purple-600"
@@ -115,7 +115,7 @@ export default function EmiCalculator() {
                     <input
                       type="number"
                       min={7}
-                      max={40}
+                      max={45}
                       value={tenure}
                       onChange={(e) => setTenure(Number(e.target.value))}
                       className="mt-3 h-11 w-full rounded-lg border border-purple-100 bg-purple-50/50 px-3 text-center text-sm font-semibold text-slate-900 outline-none transition focus:border-purple-500 focus:bg-white"
@@ -162,12 +162,12 @@ export default function EmiCalculator() {
                           "inset 0 8px 22px rgba(15,23,42,0.08), 0 16px 36px rgba(124,58,237,0.14)",
                       }}
                     >
-                      <div className="flex h-[68%] w-[68%] flex-col items-center justify-center rounded-full bg-white px-3 text-center shadow-lg">
-                        <p className="text-xl font-bold leading-tight text-slate-950 sm:text-2xl">
+                      <div className="flex h-[70%] w-[70%] min-w-0 flex-col items-center justify-center rounded-full bg-white px-2 text-center shadow-lg">
+                        <p className="w-full max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-base font-bold leading-tight text-slate-950 sm:text-lg md:text-xl">
                           {formatINR(totalPayable)}
                         </p>
 
-                        <p className="mt-1 text-xs font-medium text-slate-500">
+                        <p className="mt-1 px-1 text-[11px] font-medium leading-tight text-slate-500 sm:text-xs">
                           Total Payable
                         </p>
                       </div>
@@ -203,7 +203,7 @@ export default function EmiCalculator() {
                         Total Repayment
                       </p>
 
-                      <p className="mt-1 text-3xl font-bold">
+                      <p className="mt-1 break-words text-2xl font-bold sm:text-3xl">
                         {formatINR(totalPayable)}
                       </p>
                     </div>
@@ -243,8 +243,8 @@ export default function EmiCalculator() {
                     {[
                       `Loan Amount: ${formatINR(
                         5000
-                      )} to ${formatINR(100000)}`,
-                      "Tenure: 7 to 40 Days",
+                      )} to ${formatINR(200000)}`,
+                      "Tenure: 7 to 45 Days",
                       "Fast approval process",
                       "No hidden charges",
                       "Flexible repayment options",

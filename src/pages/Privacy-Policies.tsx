@@ -18,7 +18,7 @@ const PrivacyPolicy = () => {
 
           {/* INTRO */}
           <p className="mb-5">
-            Welcome to <strong>WaqtMoney</strong>, a digital platform providing fast and secure 
+            Welcome to <strong>Waqt Money</strong>, a digital platform providing fast and secure 
             payday loan solutions in India. We are committed to protecting your privacy and 
             ensuring that your personal and financial information is handled safely and responsibly.
           </p>
@@ -26,14 +26,14 @@ const PrivacyPolicy = () => {
           <p className="mb-5">
             This Privacy Policy explains how we collect, use, process, and protect your information 
             when you use our website, mobile application, or services. By accessing or using 
-            WaqtMoney services, you agree to the terms outlined in this policy.
+            Waqt Money services, you agree to the terms outlined in this policy.
           </p>
 
           {/* DEFINITIONS */}
           <h2 className="text-lg font-semibold text-primary">Definition</h2>
 
           <div className="space-y-3 text-black mb-6">
-            <p><strong>"Company"</strong> refers to WaqtMoney, offering instant payday loan services.</p>
+            <p><strong>"Company"</strong> refers to Waqt Money, offering instant payday loan services.</p>
             <p><strong>"User"</strong> refers to any individual applying for or using our services.</p>
             <p><strong>"Personal Information"</strong> means any data that identifies you personally.</p>
             <p><strong>"Services"</strong> include loan application, approval, disbursal, and support.</p>
@@ -135,7 +135,7 @@ const PrivacyPolicy = () => {
           </h2>
 
           <p className="mb-6">
-            WaqtMoney reserves the right to update this Privacy Policy at any time. Changes will be 
+            Waqt Money reserves the right to update this Privacy Policy at any time. Changes will be 
             reflected on this page and continued usage means acceptance of updates.
           </p>
 

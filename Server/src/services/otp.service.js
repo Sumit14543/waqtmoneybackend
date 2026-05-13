@@ -4,6 +4,7 @@ const otpStore = {};
 const attemptStore = {};
 
 const OTP_TTL_MS = 60 * 1000;
+const MAX_ACTIVE_OTPS_PER_KEY = 5;
 const MAX_ATTEMPTS = 5;
 const BLOCK_DURATION_MS = 15 * 60 * 1000;
 const MAIL_TIMEOUT_MS = 15000;
@@ -26,6 +27,11 @@ const getWhatsAppAuthKey = () =>
     process.env.WHATSAPP_AUTH_KEY
   )?.trim();
 
+const isLocalOtpDebugEnabled = () =>
+  process.env.NODE_ENV !== "production" ||
+  String(process.env.CLIENT_BASE_URL || "").includes("localhost") ||
+  String(process.env.API_PUBLIC_BASE_URL || "").includes("localhost");
+
 const getOtpKey = ({ phone, email }) => {
   const normalizedPhone = normalizePhone(phone);
   const normalizedEmail = normalizeEmail(email);
@@ -44,6 +50,21 @@ const getOtpKeys = ({ phone, email }) => {
   if (normalizedEmail) keys.push(`email:${normalizedEmail}`);
 
   return keys;
+};
+
+const saveOtpForKey = (key, otp, expires) => {
+  const existingOtps = Array.isArray(otpStore[key]?.otps)
+    ? otpStore[key].otps
+    : otpStore[key]?.otp
+      ? [{ otp: otpStore[key].otp, expires: otpStore[key].expires }]
+      : [];
+
+  const activeOtps = existingOtps
+    .filter((record) => Date.now() <= record.expires)
+    .concat({ otp, expires })
+    .slice(-MAX_ACTIVE_OTPS_PER_KEY);
+
+  otpStore[key] = { otps: activeOtps };
 };
 
 const withTimeout = (promise, timeoutMs) =>
@@ -200,16 +221,8 @@ export const sendOTPService = async ({ phone, email }) => {
   const channels = [];
   const warnings = [];
 
-  otpStore[otpKey] = {
-    otp,
-    expires: now + OTP_TTL_MS,
-  };
-
   getOtpKeys({ phone, email }).forEach((key) => {
-    otpStore[key] = {
-      otp,
-      expires: now + OTP_TTL_MS,
-    };
+    saveOtpForKey(key, otp, now + OTP_TTL_MS);
   });
 
   if (phone && getWhatsAppAuthKey()) {
@@ -231,7 +244,9 @@ export const sendOTPService = async ({ phone, email }) => {
   }
 
   if (channels.length === 0) {
-    delete otpStore[otpKey];
+    getOtpKeys({ phone, email }).forEach((key) => {
+      delete otpStore[key];
+    });
     const error = new Error("OTP could not be delivered. Please check your email/mobile or try again.");
     error.statusCode = 502;
     error.details = warnings;
@@ -244,6 +259,7 @@ export const sendOTPService = async ({ phone, email }) => {
     channels,
     ttl: Math.floor(OTP_TTL_MS / 1000),
     warning: warnings.join(" | ") || undefined,
+    debugOtp: isLocalOtpDebugEnabled() ? String(otp) : undefined,
   };
 };
 
@@ -256,14 +272,28 @@ export const verifyOTPService = ({ phone, email, otp }) => {
     return false;
   }
 
-  if (Date.now() > record.expires) {
+  const now = Date.now();
+  const activeOtps = Array.isArray(record.otps)
+    ? record.otps.filter((entry) => now <= entry.expires)
+    : record.otp && now <= record.expires
+      ? [{ otp: record.otp, expires: record.expires }]
+      : [];
+
+  if (activeOtps.length === 0) {
     otpKeys.forEach((key) => {
       delete otpStore[key];
     });
     return "expired";
   }
 
-  const isValid = String(record.otp) === String(otp);
+  otpKeys.forEach((key) => {
+    if (otpStore[key]) {
+      otpStore[key].otps = activeOtps;
+    }
+  });
+
+  const enteredOtp = String(otp || "").trim();
+  const isValid = activeOtps.some((entry) => String(entry.otp) === enteredOtp);
 
   if (isValid) {
     otpKeys.forEach((key) => {

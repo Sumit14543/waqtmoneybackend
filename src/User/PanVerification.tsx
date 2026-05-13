@@ -225,6 +225,7 @@ const PanVerification = () => {
 
                   <input
                     type="text"
+                    autoComplete="off"
                     value={pan}
                     onChange={(e) => handlePanChange(e.target.value)}
                     maxLength={10}
@@ -243,6 +244,7 @@ const PanVerification = () => {
 
                   <input
                     type="text"
+                    autoComplete="name"
                     value={loading ? "Fetching..." : name}
                     readOnly
                     placeholder="Fetched after verification"
@@ -259,6 +261,7 @@ const PanVerification = () => {
 
                   <input
                     type={loading ? "text" : "date"}
+                    autoComplete="bday"
                     value={loading ? "Fetching..." : dob}
                     readOnly
                     className={`mt-2 h-[52px] w-full rounded-lg border border-[#d8c5ff] px-4 text-sm font-semibold text-[#071d3a] outline-none ${loading ? "bg-[#f8fafc] text-[#a0aec0]" : "bg-[#f8fafc]"}`}
@@ -280,75 +283,78 @@ const PanVerification = () => {
       </div>
 
       {showConfirmation && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-black/35 px-0 font-sans backdrop-blur-[1px] sm:items-center sm:px-4 sm:py-6">
-          <div className="max-h-[92vh] w-full max-w-[500px] overflow-y-auto rounded-t-[28px] bg-white px-4 pb-5 pt-5 shadow-xl sm:rounded-[28px] sm:px-6 sm:pb-7 sm:pt-6">
-            <h1 className="mb-4 text-[20px] font-medium text-[#24242c] sm:mb-5 sm:text-[22px]">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/35 px-3 py-3 font-sans backdrop-blur-[1px] sm:items-center sm:px-4 sm:py-6">
+          <div className="flex max-h-[88dvh] w-full max-w-[440px] flex-col overflow-hidden rounded-[24px] bg-white shadow-xl sm:max-h-[90vh] sm:rounded-[28px]">
+            <div className="px-4 pb-3 pt-5 sm:px-6 sm:pb-4 sm:pt-6">
+              <h1 className="text-[18px] font-semibold leading-tight text-[#24242c] sm:text-[22px]">
               Is this information correct?
-            </h1>
+              </h1>
+            </div>
 
-            <div className="relative overflow-hidden rounded-[16px] border border-[#d9dce8] bg-gradient-to-br from-[#f5f7ff] to-[#edf2ff] px-4 pb-4 pt-4 shadow-[0_3px_0_#9aa9ff] sm:px-5 sm:pb-5">
-              <div className="absolute right-5 top-4 text-center opacity-80">
-                <img
-                  src="/ashoka4-pillers.png"
-                  alt="Ashoka Pillar"
-                  className="mx-auto h-[88px] w-[76px] object-contain"
-                />
-               
-              </div>
-
-              <div className="mb-5 pr-28">
-                <p className="mb-1 text-[14px] font-medium text-[#777b8d]">Name</p>
-                <h2 className="break-words text-[19px] font-extrabold tracking-wide text-[#2c2d36]">
-                  {name || "-"}
-                </h2>
-              </div>
-
-              <div className="mb-5 grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
-                <div>
-                  <p className="mb-1 text-[14px] font-medium text-[#777b8d]">
-                    PAN Number
-                  </p>
-                  <h3 className="text-[18px] font-extrabold text-[#2c2d36]">
-                    {pan || "-"}
-                  </h3>
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6">
+              <div className="relative overflow-hidden rounded-[16px] border border-[#d9dce8] bg-gradient-to-br from-[#f5f7ff] to-[#edf2ff] px-4 pb-4 pt-4 shadow-[0_3px_0_#9aa9ff] sm:px-5 sm:pb-5">
+                <div className="absolute right-4 top-4 text-center opacity-80 sm:right-5">
+                  <img
+                    src="/ashoka4-pillers.png"
+                    alt="Ashoka Pillar"
+                    className="mx-auto h-[68px] w-[58px] object-contain sm:h-[88px] sm:w-[76px]"
+                  />
                 </div>
 
-                <div className="text-left">
-                  <p className="mb-1 text-[14px] font-medium text-[#777b8d]">
-                    Date of Birth
-                  </p>
-                  <h3 className="text-[18px] font-extrabold text-[#2c2d36]">
-                    {formatDisplayDate(dob)}
-                  </h3>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 border-t-2 border-dashed border-[#d2d6e3] pt-4 min-[420px]:grid-cols-2">
-                <div>
-                  <p className="mb-1 text-[14px] font-medium text-[#777b8d]">
-                    Father Name
-                  </p>
-                  <h3 className="break-words text-[18px] font-extrabold text-[#2c2d36]">
-                    {fatherName || "-"}
-                  </h3>
+                <div className="mb-4 pr-20 sm:mb-5 sm:pr-28">
+                  <p className="mb-1 text-[12px] font-semibold text-[#777b8d] sm:text-[14px]">Name</p>
+                  <h2 className="break-words text-[16px] font-extrabold tracking-wide text-[#2c2d36] sm:text-[19px]">
+                    {name || "-"}
+                  </h2>
                 </div>
 
-                <div>
-                  <p className="mb-1 text-[14px] font-medium text-[#777b8d]">
-                    Gender
-                  </p>
-                  <h3 className="text-[18px] font-extrabold text-[#2c2d36]">
-                    {gender || "-"}
-                  </h3>
+                <div className="mb-4 grid grid-cols-1 gap-3 sm:mb-5 min-[420px]:grid-cols-2">
+                  <div>
+                    <p className="mb-1 text-[12px] font-semibold text-[#777b8d] sm:text-[14px]">
+                      PAN Number
+                    </p>
+                    <h3 className="text-[16px] font-extrabold text-[#2c2d36] sm:text-[18px]">
+                      {pan || "-"}
+                    </h3>
+                  </div>
+
+                  <div className="text-left">
+                    <p className="mb-1 text-[12px] font-semibold text-[#777b8d] sm:text-[14px]">
+                      Date of Birth
+                    </p>
+                    <h3 className="text-[16px] font-extrabold text-[#2c2d36] sm:text-[18px]">
+                      {formatDisplayDate(dob)}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 border-t-2 border-dashed border-[#d2d6e3] pt-3 sm:pt-4 min-[420px]:grid-cols-2">
+                  <div>
+                    <p className="mb-1 text-[12px] font-semibold text-[#777b8d] sm:text-[14px]">
+                      Father Name
+                    </p>
+                    <h3 className="break-words text-[16px] font-extrabold text-[#2c2d36] sm:text-[18px]">
+                      {fatherName || "-"}
+                    </h3>
+                  </div>
+
+                  <div>
+                    <p className="mb-1 text-[12px] font-semibold text-[#777b8d] sm:text-[14px]">
+                      Gender
+                    </p>
+                    <h3 className="text-[16px] font-extrabold text-[#2c2d36] sm:text-[18px]">
+                      {gender || "-"}
+                    </h3>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="mt-6 flex flex-col gap-3 min-[420px]:flex-row min-[420px]:gap-4">
+            <div className="mt-4 flex flex-col gap-3 border-t border-[#edf0f7] bg-white px-4 pb-5 pt-4 sm:mt-5 sm:px-6 sm:pb-6 min-[420px]:flex-row min-[420px]:gap-4">
               <button
                 type="button"
                 onClick={() => setShowConfirmation(false)}
-                className="h-[52px] w-full rounded-full border-2 border-[#23243d] bg-white text-[18px] font-bold text-[#23243d] min-[420px]:h-[58px] min-[420px]:w-[125px] min-[420px]:text-[20px]"
+                className="h-12 w-full rounded-full border-2 border-[#23243d] bg-white text-[16px] font-bold text-[#23243d] min-[420px]:w-[125px]"
               >
                 No
               </button>
@@ -356,7 +362,7 @@ const PanVerification = () => {
               <button
                 type="button"
                 onClick={handleConfirmPan}
-                className="h-[52px] flex-1 rounded-full bg-[#282b4b] text-[17px] font-bold text-white shadow-md min-[420px]:h-[58px] min-[420px]:text-[19px]"
+                className="h-12 w-full rounded-full bg-[#282b4b] px-4 text-[15px] font-bold text-white shadow-md min-[420px]:flex-1 sm:text-[17px]"
               >
                 Confirm and Proceed
               </button>
