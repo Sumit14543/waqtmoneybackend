@@ -36,6 +36,7 @@ uploads/
 cache/
 
 # Archives and generated documents
+deploy_packages/
 *.zip
 *.tar
 *.tar.gz
