@@ -21,15 +21,18 @@ if (fs.existsSync(envPath)) {
 const isHttpsUrl = (value) => /^https:\/\/[^/]+/i.test(String(value || ""));
 
 if (process.env.NODE_ENV === "production") {
+  process.env.CASHFREE_ENV = process.env.CASHFREE_ENV || "production";
+
+  if (!process.env.API_PUBLIC_BASE_URL?.trim() && process.env.RENDER_EXTERNAL_URL?.trim()) {
+    process.env.API_PUBLIC_BASE_URL = process.env.RENDER_EXTERNAL_URL;
+  }
+
   const requiredEnvVars = [
     "CLIENT_BASE_URL",
-    "API_PUBLIC_BASE_URL",
     "DB_HOST",
     "DB_NAME",
     "DB_USER",
     "JWT_SECRET",
-    "CASHFREE_CLIENT_ID",
-    "CASHFREE_CLIENT_SECRET",
   ];
   const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]?.trim());
 
