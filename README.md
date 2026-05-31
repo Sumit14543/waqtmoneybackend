@@ -55,7 +55,7 @@ Use the live frontend on `https://waqtmoney.com` and run the Node API on a cPane
    CASHFREE_ENV=production
    CASHFREE_CLIENT_ID=your_cashfree_prod_client_id
    CASHFREE_CLIENT_SECRET=your_cashfree_prod_client_secret
-   CASHFREE_ALLOWED_ORIGIN=https://waqtmoney.com
+   CASHFREE_ALLOWED_ORIGIN=https://waqtmoney.com,https://www.waqtmoney.com
    CASHFREE_RETURN_URL=https://waqtmoney.com/repayment/make-payment?order_id={order_id}&application_id={application_id}
    ```
 
@@ -65,4 +65,4 @@ Use the live frontend on `https://waqtmoney.com` and run the Node API on a cPane
 
 - Do not commit `.env`, `.env.local`, `.env.production`, `node_modules`, `dist`, or zip backups.
 - Use cPanel environment variables for secrets.
-- Cashfree production checkout must be started from `https://waqtmoney.com`, not localhost.
+- Cashfree production checkout must be started from `https://waqtmoney.com` or `https://www.waqtmoney.com`, not localhost.

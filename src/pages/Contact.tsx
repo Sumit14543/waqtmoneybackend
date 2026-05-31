@@ -1,9 +1,9 @@
 import Navbar from "@/Components/Navbar";
 import { type FormEvent, useState } from "react";
-import { MapPin, Phone, Mail, Clock } from "lucide-react";
+import { CheckCircle2, Clock, Mail, MapPin, Phone, X } from "lucide-react";
 import Footer from "@/Components/Footer";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 const Contact = () => {
   const [formData, setFormData] = useState({
@@ -17,6 +17,7 @@ const Contact = () => {
   >({});
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [feedback, setFeedback] = useState("");
+  const [showThankYou, setShowThankYou] = useState(false);
 
   const updateField = (field: keyof typeof formData, value: string) => {
     setFormData((current) => ({
@@ -31,6 +32,11 @@ const Contact = () => {
       [field]: "",
     }));
     setFeedback("");
+    setStatus("idle");
+  };
+
+  const closeThankYou = () => {
+    setShowThankYou(false);
     setStatus("idle");
   };
 
@@ -83,7 +89,8 @@ const Contact = () => {
         message: "",
       });
       setStatus("success");
-      setFeedback("Thank you. Our team will contact you shortly.");
+      setFeedback("");
+      setShowThankYou(true);
     } catch (error) {
       setStatus("error");
       setFeedback(error instanceof Error ? error.message : "Server not reachable.");
@@ -266,6 +273,55 @@ const Contact = () => {
           </div>
         </div>
       </section>
+      {showThankYou && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/60 px-4 pb-4 backdrop-blur-sm sm:items-center sm:pb-0">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="contact-thank-you-title"
+            className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900"
+          >
+            <button
+              type="button"
+              onClick={closeThankYou}
+              aria-label="Close thank you popup"
+              className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-900 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="bg-gradient-to-br from-blue-700 via-indigo-700 to-purple-700 px-7 pb-10 pt-12 text-center text-white">
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-white/15 ring-8 ring-white/10">
+                <CheckCircle2 className="h-11 w-11" />
+              </div>
+              <h3
+                id="contact-thank-you-title"
+                className="mt-6 text-3xl font-extrabold tracking-tight"
+              >
+                Thank You!
+              </h3>
+              <p className="mt-3 text-sm leading-6 text-blue-50">
+                Your request has been submitted successfully. Our Waqt Money team
+                will contact you shortly.
+              </p>
+            </div>
+
+            <div className="px-7 py-6">
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-center text-sm font-semibold text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-100">
+                Please keep your phone available for our support call.
+              </div>
+
+              <button
+                type="button"
+                onClick={closeThankYou}
+                className="mt-5 h-12 w-full rounded-lg bg-blue-700 text-sm font-bold text-white shadow-lg shadow-blue-700/20 transition hover:bg-blue-800"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <Footer/>
     </>
   );

@@ -17,8 +17,7 @@ import {
 import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 type Application = {
   application_id?: string;
@@ -194,7 +193,7 @@ const LoanStatus = () => {
               </button>
 
               <a
-                href="tel:9217086610"
+                href="tel:9217086608"
                 className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#d8e1ee] bg-white px-4 text-sm font-semibold text-[#071d3a] transition hover:bg-[#f8fafc]"
               >
                 <CircleHelp className="h-4 w-4" />
@@ -285,11 +284,10 @@ const LoanStatus = () => {
                     <div key={String(title)} className="flex gap-4">
                       <div className="flex flex-col items-center">
                         <span
-                          className={`flex h-9 w-9 items-center justify-center rounded-full ${
-                            active
+                          className={`flex h-9 w-9 items-center justify-center rounded-full ${active
                               ? "bg-[#2f6ce5] text-white"
                               : "bg-[#e8eef7] text-[#52657d]"
-                          }`}
+                            }`}
                         >
                           <Icon className="h-4 w-4" />
                         </span>
@@ -407,7 +405,7 @@ const LoanStatus = () => {
             </div>
 
             <a
-              href="tel:9217086610"
+              href="tel:9217086608"
               className="mt-4 flex h-12 items-center justify-center gap-2 rounded-xl bg-[#2f6ce5] text-sm font-bold text-white transition hover:bg-[#1f5ed7]"
             >
               Contact Support
@@ -415,10 +413,12 @@ const LoanStatus = () => {
             </a>
 
             <a
-              href="/services"
+              href="https://wa.me/919217086608"
+              target="_blank"
+              rel="noopener noreferrer"
               className="mt-3 flex h-12 items-center justify-center rounded-xl border border-[#2f6ce5] text-sm font-bold text-[#2f6ce5] transition hover:bg-[#eef4ff]"
             >
-              View Product
+              Chat Support
             </a>
           </section>
         </aside>

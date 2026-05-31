@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ArrowRight, Shield, Clock, CheckCircle2, PhoneCall, X } from "lucide-react";
 import { Link } from "react-router-dom";
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 const stats = [
   { value: "4.9/5", label: "Average Rating" },
@@ -175,13 +175,15 @@ const HeroSection = () => {
                   alt="Happy customer"
                   width={700}
                   height={700}
+                  loading="eager"
+                  decoding="async"
                   className="relative mx-auto aspect-[5/4] w-full rounded-3xl object-contain object-bottom shadow-elevated sm:aspect-square xl:max-w-2xl"
                 />
                 <div
                   className="absolute right-3 top-28 hidden rounded-2xl bg-card p-3 shadow-2xl animate-fade-in sm:right-4 sm:top-32 sm:p-4 xl:right-5 xl:top-36 xl:block"
                   style={{ animationDelay: "0.3s" }}
                 >
-                  <p className="font-heading text-xl font-bold text-foreground sm:text-2xl">{"\u20b9"}10Cr+</p>
+                  <p className="font-heading text-xl font-bold text-foreground sm:text-2xl">{"\u20b9"}1Cr+</p>
                   <p className="text-xs text-muted-foreground">Loans Disbursed</p>
                 </div>
                 <div className="absolute bottom-4 left-3 hidden rounded-2xl bg-primary p-3 text-primary-foreground shadow-glow animate-fade-in sm:bottom-8 sm:p-4 xl:left-5 xl:block" style={{ animationDelay: "0.5s" }}>
@@ -191,7 +193,7 @@ const HeroSection = () => {
               </div>
               <div className="mt-3 grid w-full grid-cols-1 md:grid-cols-2 gap-3 xl:hidden">
                 <div className="rounded-2xl bg-card px-4 py-3 text-center shadow-lg">
-                  <p className="font-heading text-lg font-bold text-foreground">{"\u20b9"}10Cr+</p>
+                  <p className="font-heading text-lg font-bold text-foreground">{"\u20b9"}1Cr+</p>
                   <p className="text-[11px] text-muted-foreground">Loans Disbursed</p>
                 </div>
 

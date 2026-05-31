@@ -17,14 +17,14 @@ import BrandLogo from "@/Components/BrandLogo";
 
 const quickLinks = [
   { name: "Home", link: "/", icon: Home },
-  { name: "Services", link: "/Services", icon: BriefcaseBusiness },
-  { name: "About Us", link: "/About", icon: Info },
-  { name: "Contact Us", link: "/Contact", icon: PhoneCall },
-  { name: "FAQs", link: "/Faqs", icon: HelpCircle },
+  { name: "Services", link: "/services", icon: BriefcaseBusiness },
+  { name: "About Us", link: "/about", icon: Info },
+  { name: "Contact Us", link: "/contact", icon: PhoneCall },
+  { name: "FAQs", link: "/faqs", icon: HelpCircle },
 ];
 
 const policies = [
-  { name: "Privacy Policy", link: "/Privacy-Policies", icon: LockKeyhole },
+  { name: "Privacy Policy", link: "/privacy-policies", icon: LockKeyhole },
   { name: "Terms & Conditions", link: "/terms-conditions", icon: FileText },
   { name: "Grievance Redressal", link: "/grievance-redressal", icon: BadgeHelp },
   { name: "Fair Practices Code", link: "/fair-practices-code", icon: FileText },
@@ -183,7 +183,7 @@ const Footer = () => {
           <p>NBFC Partner: Waqt Finance Pvt Ltd</p>
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 md:justify-end">
             {/* <Link
-              to="/Privacy-Policies"
+              to="/privacy-policies"
               className="transition hover:text-purple-600"
             >
               Privacy Policy
@@ -196,7 +196,7 @@ const Footer = () => {
               Terms
             </Link>
 
-            <Link to="/Contact" className="transition hover:text-purple-600">
+            <Link to="/contact" className="transition hover:text-purple-600">
               Support
             </Link> */}
             

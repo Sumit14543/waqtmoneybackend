@@ -1,33 +1,36 @@
+import { lazy, Suspense } from "react";
 import Navbar from "@/Components/Navbar";
 import HeroSection from "@/Components/HeroSection";
-import FeaturesSection from "@/Components/FeaturesSection";
-import LoanProductsSection from "@/Components/LoanProductsSection";
-import StorySection from "@/Components/StorySection";
-import StepsSection from "@/Components/StepsSection";
-import EligibilitySection from "@/Components/EligibilitySection";
-import TestimonialsSection from "@/Components/TestimonialsSection";
-import TrustSection from "@/Components/TrustSection";
-import FAQSection from "@/Components/FAQSection";
-import CTASection from "@/Components/CTASection";
 import Footer from "@/Components/Footer";
-import LoanCalculator from "@/Components/LoanCalculator";
-import BorrowSection from "@/Components/BorrowSection";
+
+const FeaturesSection = lazy(() => import("@/Components/FeaturesSection"));
+const LoanProductsSection = lazy(() => import("@/Components/LoanProductsSection"));
+const StorySection = lazy(() => import("@/Components/StorySection"));
+const StepsSection = lazy(() => import("@/Components/StepsSection"));
+const EligibilitySection = lazy(() => import("@/Components/EligibilitySection"));
+const TestimonialsSection = lazy(() => import("@/Components/TestimonialsSection"));
+const TrustSection = lazy(() => import("@/Components/TrustSection"));
+const FAQSection = lazy(() => import("@/Components/FAQSection"));
+const LoanCalculator = lazy(() => import("@/Components/LoanCalculator"));
+const BorrowSection = lazy(() => import("@/Components/BorrowSection"));
 
 const Index = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <HeroSection />
-      <StepsSection />
-      <EligibilitySection />
-      <LoanCalculator/>
-      <BorrowSection/>
-      <FeaturesSection />
-      <LoanProductsSection />
-      <StorySection />
-      <TestimonialsSection />
-      <TrustSection />
-      <FAQSection />
+      <Suspense fallback={null}>
+        <StepsSection />
+        <EligibilitySection />
+        <LoanCalculator/>
+        <BorrowSection/>
+        <FeaturesSection />
+        <LoanProductsSection />
+        <StorySection />
+        <TestimonialsSection />
+        <TrustSection />
+        <FAQSection />
+      </Suspense>
       
       <Footer />
     </div>

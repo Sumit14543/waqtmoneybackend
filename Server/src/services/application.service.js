@@ -15,6 +15,17 @@ const badRequest = (message) => {
   return error;
 };
 
+const conflict = (message) => {
+  const error = new Error(message);
+  error.statusCode = 409;
+  return error;
+};
+
+const DUPLICATE_PAN_MESSAGE =
+  "This PAN number has already been used for a loan application. Please use a different PAN.";
+const RUNNING_LOAN_MESSAGE =
+  "This mobile number is already registered. Please use a different number.";
+
 const ensureApplicationTable = async () => {
   if (applicationTableReady) return;
 
@@ -28,6 +39,7 @@ const ensureApplicationTable = async () => {
       id INT AUTO_INCREMENT PRIMARY KEY,
       application_id VARCHAR(64) NOT NULL UNIQUE,
       loan_type VARCHAR(50) NULL,
+      source VARCHAR(100) DEFAULT 'waqtmoney',
       mobile VARCHAR(20) NULL,
       email VARCHAR(255) NULL,
       pan_number VARCHAR(20) NULL,
@@ -64,6 +76,8 @@ const ensureApplicationTable = async () => {
       salary_slip_current VARCHAR(255) NULL,
       video_kyc VARCHAR(255) NULL,
       current_step VARCHAR(100) NULL,
+      lead_visible TINYINT(1) DEFAULT 0,
+      completed_at DATETIME NULL,
       submit_at DATETIME NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       last_activity_at DATETIME NULL,
@@ -77,10 +91,149 @@ const ensureApplicationTable = async () => {
 };
 
 const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
+const normalizePan = (value) => String(value || "").trim().toUpperCase();
+const FINAL_SUBMITTED_APPLICATION_CONDITION =
+  "(lead_visible = 1 OR current_step = 'video_kyc_completed' OR completed_at IS NOT NULL)";
+
+const buildApplicationLookup = (value) => {
+  const lookupValue = String(value || "").trim();
+
+  if (/^\d+$/.test(lookupValue)) {
+    return {
+      clause: "(id = ? OR application_id = ?)",
+      values: [Number(lookupValue), lookupValue],
+    };
+  }
+
+  return {
+    clause: "application_id = ?",
+    values: [lookupValue],
+  };
+};
 
 const normalizeUanNumber = (value) => {
   const digits = String(value || "").replace(/\D/g, "");
   return /^\d{12}$/.test(digits) ? digits : "";
+};
+
+const findDuplicatePanApplication = async (pan, excludeId = null) => {
+  const normalizedPan = normalizePan(pan);
+  if (!normalizedPan) return null;
+
+  await ensureApplicationTable();
+  await ensureColumns([
+    ["lead_visible", "TINYINT(1) DEFAULT 0"],
+    ["completed_at", "DATETIME NULL"],
+  ]);
+
+  const values = [normalizedPan];
+  let excludeCurrentApplication = "";
+
+  if (excludeId) {
+    const lookup = buildApplicationLookup(excludeId);
+    excludeCurrentApplication = ` AND NOT (${lookup.clause})`;
+    values.push(...lookup.values);
+  }
+
+  const [rows] = await db.execute(
+    `SELECT id, application_id
+     FROM ${APPLICATION_TABLE}
+     WHERE pan_number = ?
+       AND pan_number IS NOT NULL
+       AND pan_number <> ''
+       AND ${FINAL_SUBMITTED_APPLICATION_CONDITION}
+       ${excludeCurrentApplication}
+     ORDER BY last_activity_at DESC, id DESC
+     LIMIT 1`,
+    values
+  );
+
+  return rows[0] || null;
+};
+
+const findDuplicateMobileApplication = async (mobile, excludeId = null) => {
+  const normalizedMobile = normalizeMobile(mobile);
+  if (!/^[6-9]\d{9}$/.test(normalizedMobile)) return null;
+
+  await ensureApplicationTable();
+  await ensureColumns([
+    ["lead_visible", "TINYINT(1) DEFAULT 0"],
+    ["completed_at", "DATETIME NULL"],
+  ]);
+
+  const values = [normalizedMobile, `91${normalizedMobile}`, `+91${normalizedMobile}`];
+  let excludeCurrentApplication = "";
+
+  if (excludeId) {
+    const lookup = buildApplicationLookup(excludeId);
+    excludeCurrentApplication = ` AND NOT (${lookup.clause})`;
+    values.push(...lookup.values);
+  }
+
+  const [rows] = await db.execute(
+    `SELECT id, application_id
+     FROM ${APPLICATION_TABLE}
+     WHERE (mobile = ? OR mobile = ? OR mobile = ?)
+       AND mobile IS NOT NULL
+       AND mobile <> ''
+       AND ${FINAL_SUBMITTED_APPLICATION_CONDITION}
+       AND COALESCE(current_step, '') NOT IN ('loan_closed', 'rejected', 'cancelled')
+       ${excludeCurrentApplication}
+     ORDER BY last_activity_at DESC, id DESC
+     LIMIT 1`,
+    values
+  );
+
+  return rows[0] || null;
+};
+
+const assertPanNotAlreadyUsed = async (pan, excludeId = null) => {
+  const duplicateApplication = await findDuplicatePanApplication(pan, excludeId);
+
+  if (duplicateApplication) {
+    throw conflict(DUPLICATE_PAN_MESSAGE);
+  }
+};
+
+const assertMobileNotAlreadyUsed = async (mobile, excludeId = null) => {
+  const duplicateApplication = await findDuplicateMobileApplication(mobile, excludeId);
+
+  if (duplicateApplication) {
+    throw conflict(RUNNING_LOAN_MESSAGE);
+  }
+};
+
+const findApplicationByLookup = async (id) => {
+  if (!id) return null;
+
+  await ensureApplicationTable();
+
+  const lookup = buildApplicationLookup(id);
+  const [rows] = await db.execute(
+    `SELECT id, application_id, mobile, uan_number
+     FROM ${APPLICATION_TABLE}
+     WHERE ${lookup.clause}
+     LIMIT 1`,
+    lookup.values
+  );
+
+  return rows[0] || null;
+};
+
+const clearApplicationUanById = async (id) => {
+  if (!id) return null;
+
+  await ensureColumns([["uan_number", "varchar(20) NULL"]]);
+
+  const lookup = buildApplicationLookup(id);
+  await db.execute(
+    `UPDATE ${APPLICATION_TABLE}
+     SET uan_number = NULL, last_activity_at = NOW()
+     WHERE ${lookup.clause}`,
+    lookup.values
+  );
+
+  return null;
 };
 
 const ensureColumns = async (columns) => {
@@ -197,15 +350,41 @@ export const saveApplicationUanById = async (id, uanNumber) => {
   if (!id) throw badRequest("Application ID is required");
 
   const normalizedUan = normalizeUanNumber(uanNumber);
-  if (!normalizedUan) return "";
+  if (!normalizedUan) {
+    await clearApplicationUanById(id);
+    return "";
+  }
+
+  const application = await findApplicationByLookup(id);
+  if (!application) {
+    throw badRequest("Application not found");
+  }
+
+  const verifiedUan = await fetchUanByMobile(application.mobile).catch((error) => {
+    console.error("UAN verification lookup error:", error.message);
+    return "";
+  });
+
+  if (!verifiedUan || verifiedUan !== normalizedUan) {
+    console.warn("Rejected unverified UAN save attempt", {
+      applicationId: application.application_id || application.id,
+      hasProviderUan: Boolean(verifiedUan),
+      matchedProvider: verifiedUan === normalizedUan,
+    });
+    if (!verifiedUan) {
+      await clearApplicationUanById(id);
+    }
+    return "";
+  }
 
   await ensureColumns([["uan_number", "varchar(20) NULL"]]);
 
+  const lookup = buildApplicationLookup(id);
   const [result] = await db.execute(
     `UPDATE ${APPLICATION_TABLE}
      SET uan_number = ?, last_activity_at = NOW()
-     WHERE id = ? OR application_id = ?`,
-    [normalizedUan, id, id]
+     WHERE ${lookup.clause}`,
+    [normalizedUan, ...lookup.values]
   );
 
   if (result.affectedRows === 0) {
@@ -220,16 +399,6 @@ const syncApplicationUan = async (application, lookupId) => {
 
   const applicationId = lookupId || application.application_id || application.id;
 
-  const savedUanNumber = await getSavedUanByMobile(application.mobile);
-  if (savedUanNumber) {
-    return saveApplicationUanById(applicationId, savedUanNumber);
-  }
-
-  const legacyUanNumber = await getLegacyUanByApplicationId(application.application_id || applicationId);
-  if (legacyUanNumber) {
-    return saveApplicationUanById(applicationId, legacyUanNumber);
-  }
-
   const uanNumber = await fetchUanByMobile(application.mobile).catch((error) => {
     console.error("UAN lookup error:", error);
     return "";
@@ -239,7 +408,7 @@ const syncApplicationUan = async (application, lookupId) => {
     return saveApplicationUanById(applicationId, uanNumber);
   }
 
-  return null;
+  return clearApplicationUanById(applicationId);
 };
 
 const tableExistsInConnection = async (connection, tableName) => {
@@ -259,12 +428,22 @@ export const updateApplication = async (id, data) => {
   if (!id) throw badRequest("Application ID is required for update");
 
   await ensureApplicationTable();
+  await ensureColumns([
+    ["lead_visible", "TINYINT(1) DEFAULT 0"],
+    ["completed_at", "DATETIME NULL"],
+  ]);
 
   if (
     Object.prototype.hasOwnProperty.call(data, "uan_number") ||
     Object.prototype.hasOwnProperty.call(data, "uanNumber")
   ) {
     await ensureColumns([["uan_number", "varchar(20) NULL"]]);
+    delete data.uan_number;
+    delete data.uanNumber;
+    await getApplicationUanById(id).catch((error) => {
+      console.error("UAN sync during application update failed:", error.message);
+      return "";
+    });
   }
 
   if (Object.prototype.hasOwnProperty.call(data, "video_kyc")) {
@@ -279,9 +458,25 @@ export const updateApplication = async (id, data) => {
     await ensureColumns([["salary_slip_current", "varchar(255) NULL"]]);
   }
 
-  if (data.current_step === "video_kyc_completed" || Object.prototype.hasOwnProperty.call(data, "submit_at")) {
-    await ensureColumns([["submit_at", "datetime NULL"]]);
+  const requestedPan = data.pan || data.pan_number;
+  if (requestedPan) {
+    if (Object.prototype.hasOwnProperty.call(data, "pan")) {
+      data.pan = normalizePan(requestedPan);
+    }
+    if (Object.prototype.hasOwnProperty.call(data, "pan_number")) {
+      data.pan_number = normalizePan(requestedPan);
+    }
+    await assertPanNotAlreadyUsed(requestedPan, id);
+  }
+
+  if (data.current_step === "video_kyc_completed") {
+    data.lead_visible = 1;
+    data.completed_at = data.completed_at || new Date();
     data.submit_at = data.submit_at || new Date();
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, "submit_at")) {
+    await ensureColumns([["submit_at", "datetime NULL"]]);
   }
 
   const fieldMap = {
@@ -315,13 +510,14 @@ export const updateApplication = async (id, data) => {
   if (entries.length === 0) return null;
 
   const setClause = entries.map(([field]) => `${field} = ?`).join(", ");
-  const values = [...entries.map(([, value]) => value), id];
+  const lookup = buildApplicationLookup(id);
+  const values = entries.map(([, value]) => value);
 
   const [result] = await db.execute(
     `UPDATE ${APPLICATION_TABLE}
      SET ${setClause}, last_activity_at = NOW()
-     WHERE id = ? OR application_id = ?`,
-    [...values, id]
+     WHERE ${lookup.clause}`,
+    [...values, ...lookup.values]
   );
 
   return result;
@@ -332,12 +528,13 @@ export const getApplicationById = async (id) => {
 
   await ensureApplicationTable();
 
+  const lookup = buildApplicationLookup(id);
   const [rows] = await db.execute(
     `SELECT *
      FROM ${APPLICATION_TABLE}
-     WHERE id = ? OR application_id = ?
+     WHERE ${lookup.clause}
      LIMIT 1`,
-    [id, id]
+    lookup.values
   );
 
   return rows[0] || null;
@@ -385,21 +582,33 @@ export const getApplicationUanById = async (id) => {
 
   await ensureColumns([["uan_number", "varchar(20) NULL"]]);
 
+  const lookup = buildApplicationLookup(id);
   const [rows] = await db.execute(
     `SELECT id, application_id, mobile, uan_number
      FROM ${APPLICATION_TABLE}
-     WHERE id = ? OR application_id = ?
+     WHERE ${lookup.clause}
      LIMIT 1`,
-    [id, id]
+    lookup.values
   );
 
   const application = rows[0];
   if (!application) return null;
 
   const existingUanNumber = normalizeUanNumber(application.uan_number);
-  if (existingUanNumber) return existingUanNumber;
+  const providerUanNumber = await fetchUanByMobile(application.mobile).catch((error) => {
+    console.error("UAN lookup error:", error.message);
+    return "";
+  });
 
-  return syncApplicationUan(application, id);
+  if (providerUanNumber) {
+    if (providerUanNumber !== existingUanNumber) {
+      return saveApplicationUanById(id, providerUanNumber);
+    }
+
+    return existingUanNumber;
+  }
+
+  return clearApplicationUanById(id);
 };
 
 export const createHeroLead = async (data) => {
@@ -522,6 +731,7 @@ export const updateWorkDetails = async (id, data) => {
     throw badRequest("Experience must be between 0 and 50 years");
   }
 
+  const lookup = buildApplicationLookup(id);
   const [result] = await db.execute(
     `UPDATE ${APPLICATION_TABLE}
      SET company_name = ?,
@@ -534,7 +744,7 @@ export const updateWorkDetails = async (id, data) => {
          experience_years = ?,
          current_step = 'bank_details',
          last_activity_at = NOW()
-     WHERE id = ? OR application_id = ?`,
+     WHERE ${lookup.clause}`,
     [
       company,
       designation,
@@ -544,8 +754,7 @@ export const updateWorkDetails = async (id, data) => {
       officePincode,
       education,
       experienceYears,
-      id,
-      id,
+      ...lookup.values,
     ]
   );
 
@@ -574,6 +783,7 @@ export const updateBankDetails = async (id, data) => {
   if (!/^[A-Za-z\s]+$/.test(accountHolder)) throw badRequest("Only alphabets allowed in holder name");
   if (!/^\d{9,18}$/.test(accountNumber)) throw badRequest("Enter 9-18 digit valid account number");
 
+  const lookup = buildApplicationLookup(id);
   const [result] = await db.execute(
     `UPDATE ${APPLICATION_TABLE}
      SET bank_name = ?,
@@ -583,8 +793,8 @@ export const updateBankDetails = async (id, data) => {
          ifsc_code = ?,
          current_step = 'references',
          last_activity_at = NOW()
-     WHERE id = ? OR application_id = ?`,
-    [bankName, branchName, accountHolder, accountNumber, ifsc, id, id]
+     WHERE ${lookup.clause}`,
+    [bankName, branchName, accountHolder, accountNumber, ifsc, ...lookup.values]
   );
 
   if (result.affectedRows === 0) {
@@ -620,6 +830,7 @@ export const updateReferenceDetails = async (id, data) => {
   if (!/^[6-9]\d{9}$/.test(reference2Mobile)) throw badRequest("Reference 2 mobile number is invalid");
   if (!reference2Relation) throw badRequest("Reference 2 relation is required");
 
+  const lookup = buildApplicationLookup(id);
   const [result] = await db.execute(
     `UPDATE ${APPLICATION_TABLE}
      SET reference1_name = ?,
@@ -630,7 +841,7 @@ export const updateReferenceDetails = async (id, data) => {
          reference2_relation = ?,
          current_step = 'upload_docs',
          last_activity_at = NOW()
-     WHERE id = ? OR application_id = ?`,
+     WHERE ${lookup.clause}`,
     [
       reference1Name,
       reference1Mobile,
@@ -638,8 +849,7 @@ export const updateReferenceDetails = async (id, data) => {
       reference2Name,
       reference2Mobile,
       reference2Relation,
-      id,
-      id,
+      ...lookup.values,
     ]
   );
 
@@ -655,12 +865,15 @@ export const createApplication = async (data) => {
   await ensureColumns([
     ["submit_at", "datetime NULL"],
     ["uan_number", "varchar(20) NULL"],
+    ["source", "varchar(100) DEFAULT 'waqtmoney'"],
+    ["lead_visible", "TINYINT(1) DEFAULT 0"],
+    ["completed_at", "DATETIME NULL"],
   ]);
 
   const employment = data.employment || data.employment_status;
   const salary = data.salary ?? data.monthly_income;
   const phone = data.phone || data.mobile;
-  const pan = data.pan || data.pan_number;
+  const pan = normalizePan(data.pan || data.pan_number);
   const email = data.email;
   const termsAccepted = data.termsAccepted ?? data.terms_accepted;
 
@@ -684,16 +897,22 @@ export const createApplication = async (data) => {
     throw badRequest("Invalid PAN");
   }
 
+  if (pan) {
+    await assertPanNotAlreadyUsed(pan);
+  }
+
   if (!phoneRegex.test(phone)) {
     throw badRequest("Invalid Phone");
   }
+
+  await assertMobileNotAlreadyUsed(phone);
 
   const applicationId = `WAQTMN-PD-${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 90 + 10)}`;
 
   const [result] = await db.execute(
     `INSERT INTO ${APPLICATION_TABLE}
-      (application_id, loan_type, mobile, email, pan_number, uan_number, employment_status, monthly_income, current_step, submit_at, last_activity_at)
-     VALUES (?, 'payday', ?, ?, ?, ?, ?, ?, 'basic_details', NOW(), NOW())`,
+      (application_id, loan_type, source, mobile, email, pan_number, uan_number, employment_status, monthly_income, current_step, lead_visible, submit_at, last_activity_at)
+     VALUES (?, 'payday', 'waqtmoney', ?, ?, ?, ?, ?, ?, 'otp_pending', 0, NULL, NOW())`,
     [applicationId, phone, email || null, pan || null, null, employment, salary]
   );
 

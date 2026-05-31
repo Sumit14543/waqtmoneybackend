@@ -4,19 +4,23 @@ import {
   ArrowRight,
   CalendarDays,
   CheckCircle2,
+  Clock,
   CreditCard,
+  FileText,
   IndianRupee,
   Landmark,
   Loader2,
+  Lock,
   ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  WalletCards,
+  X,
 } from "lucide-react";
 import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
-const DAILY_INTEREST_RATE = 0.9;
-const DEFAULT_TENURE_DAYS = 32;
-const DEFAULT_LOAN_AMOUNT = 35100;
+import { API_BASE_URL } from "@/config/api";
 const CASHFREE_SDK_URL = "https://sdk.cashfree.com/js/v3/cashfree.js";
 
 declare global {
@@ -29,6 +33,7 @@ declare global {
 
 type Application = {
   application_id?: string;
+  loan_id?: string;
   loan_amount?: number | string;
   loan_purpose?: string;
   full_name?: string;
@@ -36,6 +41,16 @@ type Application = {
   pan_number?: string;
   submit_at?: string;
   last_activity_at?: string;
+  repayment_paid_amount?: number | string;
+  repayment_status?: string;
+  status?: string;
+  outstanding_amount?: number | string;
+  maturity_amount?: number | string;
+  due_date?: string;
+  tenure_days?: number | string;
+  interest_rate?: number | string;
+  interest_accrued?: number | string;
+  repayment_source?: string;
 };
 
 const readJsonResponse = async (res: Response) => {
@@ -57,6 +72,8 @@ const formatINR = (value: number) =>
     maximumFractionDigits: value % 1 === 0 ? 0 : 2,
   }).format(value);
 
+const formatLimit = (value: number) => formatINR(value).replace("₹", "Rs ");
+
 const formatDate = (date: Date) =>
   new Intl.DateTimeFormat("en-IN", {
     day: "2-digit",
@@ -64,22 +81,24 @@ const formatDate = (date: Date) =>
     year: "numeric",
   }).format(date);
 
-const addDays = (date: Date, days: number) => {
-  const nextDate = new Date(date);
-  nextDate.setDate(nextDate.getDate() + days);
-  return nextDate;
-};
-
-const daysBetween = (start: Date, end: Date) => {
-  const diffMs = end.getTime() - start.getTime();
-  return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-};
-
 const getStoredRepaymentApplicationId = () =>
-  sessionStorage.getItem("repaymentApplicationId") ||
-  sessionStorage.getItem("applicationId") ||
-  localStorage.getItem("applicationId") ||
-  "";
+  sessionStorage.getItem("repaymentApplicationId") || "";
+
+const isRealLoanId = (value?: string | null) => {
+  const id = String(value || "").trim();
+  return Boolean(id) && !/^WAQTMN-PD-/i.test(id);
+};
+
+const isApplicationStyleId = (value?: string | null) =>
+  /^WAQTMN-PD-/i.test(String(value || "").trim());
+
+const getStoredRepaymentLoanId = () =>
+  isRealLoanId(sessionStorage.getItem("repaymentLoanId"))
+    ? sessionStorage.getItem("repaymentLoanId") || ""
+    : "";
+
+const getStoredRepaymentMobile = () =>
+  sessionStorage.getItem("repaymentMobile") || "";
 
 const getStoredRepaymentAccessToken = () =>
   sessionStorage.getItem("repaymentAccessToken") || "";
@@ -116,53 +135,114 @@ const MakePayment = () => {
   const [creatingPayment, setCreatingPayment] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState("");
   const [error, setError] = useState("");
+  const [showReloanOffer, setShowReloanOffer] = useState(false);
 
   const queryParams = new URLSearchParams(window.location.search);
   const returnedOrderId = queryParams.get("order_id") || "";
-  const returnedApplicationId = queryParams.get("application_id") || "";
+  const rawReturnedLoanId = queryParams.get("loan_id") || "";
+  const loanIdIsApplicationId = isApplicationStyleId(rawReturnedLoanId);
+  const returnedApplicationId = queryParams.get("application_id") || (loanIdIsApplicationId ? rawReturnedLoanId : "");
+  const returnedLoanId = isRealLoanId(rawReturnedLoanId) ? rawReturnedLoanId : "";
+  const returnedMobile = queryParams.get("mobile") || "";
   const applicationId = returnedApplicationId || getStoredRepaymentApplicationId();
+  const repaymentLoanId = returnedLoanId || getStoredRepaymentLoanId();
+  const repaymentMobile = returnedMobile || getStoredRepaymentMobile();
+  const repaymentLookupId = repaymentMobile || repaymentLoanId || applicationId;
   const repaymentAccessToken = getStoredRepaymentAccessToken();
+  const invalidReturnedLoanId = Boolean(
+    rawReturnedLoanId && !isRealLoanId(rawReturnedLoanId) && !loanIdIsApplicationId
+  );
 
   useEffect(() => {
+    if (loanIdIsApplicationId) {
+      sessionStorage.setItem("repaymentApplicationId", rawReturnedLoanId);
+      sessionStorage.removeItem("repaymentLoanId");
+
+      const params = new URLSearchParams(window.location.search);
+      params.delete("loan_id");
+      params.set("application_id", rawReturnedLoanId);
+      navigate(`/repayment/make-payment?${params.toString()}`, { replace: true });
+      return;
+    }
+
+    if (invalidReturnedLoanId) {
+      sessionStorage.removeItem("repaymentLoanId");
+      const storedMobile = returnedMobile || getStoredRepaymentMobile();
+      navigate(
+        storedMobile
+          ? `/repayment/make-payment?mobile=${encodeURIComponent(storedMobile)}`
+          : "/repayment",
+        { replace: true }
+      );
+      return;
+    }
+
     if (returnedApplicationId) {
       sessionStorage.setItem("repaymentApplicationId", returnedApplicationId);
     }
-  }, [returnedApplicationId]);
+    if (returnedLoanId) {
+      sessionStorage.setItem("repaymentLoanId", returnedLoanId);
+    } else if (queryParams.get("loan_id") && !isRealLoanId(queryParams.get("loan_id"))) {
+      sessionStorage.removeItem("repaymentLoanId");
+    }
+    if (returnedMobile) {
+      sessionStorage.setItem("repaymentMobile", returnedMobile);
+    }
+  }, [
+    invalidReturnedLoanId,
+    loanIdIsApplicationId,
+    navigate,
+    rawReturnedLoanId,
+    returnedApplicationId,
+    returnedLoanId,
+    returnedMobile,
+  ]);
 
-  useEffect(() => {
-    if (!applicationId) {
+  const loadApplication = async (showLoader = true) => {
+    if (!repaymentLookupId) {
       setLoading(false);
       setError("Application details not found. Please verify your PAN again.");
       return;
     }
 
-    const loadApplication = async () => {
-      setLoading(true);
-      setError("");
+    if (showLoader) setLoading(true);
+    setError("");
 
-      try {
-        const response = await fetch(`${API_BASE_URL}/application/${applicationId}`);
-        const result = await readJsonResponse(response);
+    try {
+      const response = await fetch(`${API_BASE_URL}/application/repayment/details/${encodeURIComponent(repaymentLookupId)}`);
+      const result = await readJsonResponse(response);
 
-        if (!response.ok) {
-          setError(result.message || "Unable to load repayment details");
-          return;
-        }
-
-        setApplication(result.data || null);
-      } catch (fetchError) {
-        console.error("Repayment details fetch error:", fetchError);
-        setError("Server not reachable");
-      } finally {
-        setLoading(false);
+      if (!response.ok) {
+        setError(result.message || "Unable to load repayment details");
+        setApplication(null);
+        return;
       }
-    };
 
+      const nextApplication = result.data || null;
+      setApplication(nextApplication);
+      if (nextApplication?.application_id) {
+        sessionStorage.setItem("repaymentApplicationId", nextApplication.application_id);
+      }
+      if (nextApplication?.mobile) {
+        sessionStorage.setItem("repaymentMobile", nextApplication.mobile);
+      }
+      if (isRealLoanId(nextApplication?.loan_id)) {
+        sessionStorage.setItem("repaymentLoanId", nextApplication.loan_id || "");
+      }
+    } catch (fetchError) {
+      console.error("Repayment details fetch error:", fetchError);
+      setError("Server not reachable");
+    } finally {
+      if (showLoader) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadApplication();
-  }, [applicationId]);
+  }, [repaymentLookupId]);
 
   const loadPaymentStatus = async (orderId: string) => {
-    if (!orderId) return;
+    if (!orderId) return "";
 
       setPaymentStatus("Checking payment status...");
 
@@ -173,15 +253,20 @@ const MakePayment = () => {
         if (!response.ok) {
           setPaymentStatus("");
           setError(result.message || "Unable to verify payment status");
-          return;
+          return "";
         }
 
         const status = String(result.data?.orderStatus || "").toUpperCase();
         const amount = Number(result.data?.orderAmount || 0);
 
         if (status === "PAID") {
+          setError("");
           setPaymentStatus(`Payment successful${amount ? ` for ${formatINR(amount)}` : ""}.`);
-          return;
+          if (String(result.data?.repaymentSync?.repaymentStatus || "").toLowerCase() === "paid") {
+            setShowReloanOffer(true);
+          }
+          await loadApplication(false);
+          return status;
         }
 
         setPaymentStatus(
@@ -189,11 +274,22 @@ const MakePayment = () => {
             ? `Payment status: ${status}. If money was deducted, please wait while Cashfree confirms it.`
             : "Payment status is not available yet."
         );
+        return status;
       } catch (fetchError) {
         console.error("Payment status fetch error:", fetchError);
         setPaymentStatus("");
         setError("Server not reachable");
+        return "";
       }
+  };
+
+  const waitForPaymentStatus = async (orderId: string) => {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const status = await loadPaymentStatus(orderId);
+      if (status === "PAID") return;
+
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+    }
   };
 
   useEffect(() => {
@@ -203,48 +299,74 @@ const MakePayment = () => {
   }, [returnedOrderId]);
 
   const repayment = useMemo(() => {
-    const loanAmount = Number(application?.loan_amount || DEFAULT_LOAN_AMOUNT);
-    const safeLoanAmount = Number.isFinite(loanAmount) && loanAmount > 0 ? loanAmount : DEFAULT_LOAN_AMOUNT;
-    const startDate = application?.submit_at ? new Date(application.submit_at) : new Date();
-    const validStartDate = Number.isNaN(startDate.getTime()) ? new Date() : startDate;
-    const dueDate = addDays(validStartDate, DEFAULT_TENURE_DAYS);
-    const elapsedDays = Math.min(DEFAULT_TENURE_DAYS, Math.max(1, daysBetween(validStartDate, new Date())));
-    const interestAccrued = Number(((safeLoanAmount * DAILY_INTEREST_RATE * elapsedDays) / 100).toFixed(2));
-    const maturityInterest = Number(((safeLoanAmount * DAILY_INTEREST_RATE * DEFAULT_TENURE_DAYS) / 100).toFixed(2));
-    const outstandingToday = Number((safeLoanAmount + interestAccrued).toFixed(2));
-    const maturityAmount = Number((safeLoanAmount + maturityInterest).toFixed(2));
+    const loanAmount = Number(application?.loan_amount || 0);
+    const safeLoanAmount = Number.isFinite(loanAmount) && loanAmount > 0 ? loanAmount : 0;
+    const dueDateValue = application?.due_date || application?.submit_at || "";
+    const dueDate = dueDateValue ? new Date(dueDateValue) : null;
+    const validDueDate = dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
+    const tenureDays = Number(application?.tenure_days || 0);
+    const interestAccrued = Number(application?.interest_accrued || 0);
+    const maturityAmountFromCrm = Number(application?.maturity_amount || 0);
+    const paidAmount = Number(application?.repayment_paid_amount || 0);
+    const isPaid =
+      String(application?.status || "").toLowerCase() === "paid" ||
+      String(application?.repayment_status || "").toLowerCase() === "paid";
+    const crmOutstandingAmount = Number(application?.outstanding_amount || 0);
+    const outstandingToday = isPaid
+      ? 0
+      : Number.isFinite(crmOutstandingAmount) && crmOutstandingAmount > 0
+        ? crmOutstandingAmount
+        : 0;
+    const maturityAmount = isPaid
+      ? 0
+      : Number.isFinite(maturityAmountFromCrm) && maturityAmountFromCrm > 0
+        ? maturityAmountFromCrm
+        : outstandingToday;
     const payableAmount =
       paymentType === "full"
         ? outstandingToday
         : Number(partAmount || 0);
+    const eligibleLimit = safeLoanAmount;
 
     return {
-      loanId: application?.application_id || applicationId || "-",
+      loanId: application?.loan_id || application?.application_id || repaymentLookupId || "-",
       customerName: application?.full_name || "Customer",
       loanAmount: safeLoanAmount,
-      dueDate,
-      tenureDays: DEFAULT_TENURE_DAYS,
-      elapsedDays,
-      interestAccrued,
+      dueDate: validDueDate,
+      tenureDays: Number.isFinite(tenureDays) && tenureDays > 0 ? tenureDays : 0,
+      interestRate: application?.interest_rate || "",
+      interestAccrued: Number.isFinite(interestAccrued) ? interestAccrued : 0,
       outstandingToday,
       maturityAmount,
+      paidAmount: Number.isFinite(Number(paidAmount)) ? Number(paidAmount) : 0,
+      eligibleLimit,
+      isPaid,
       payableAmount: Number.isFinite(payableAmount) ? payableAmount : 0,
     };
-  }, [application, applicationId, partAmount, paymentType]);
+  }, [application, repaymentLookupId, partAmount, paymentType]);
+
+  useEffect(() => {
+    if (paymentStatus.toLowerCase().includes("successful") && repayment.isPaid) {
+      setShowReloanOffer(true);
+    }
+  }, [paymentStatus, repayment.isPaid]);
+
+  const effectiveApplicationId = applicationId || application?.application_id || "";
 
   const detailItems = [
     ["Loan ID", repayment.loanId],
-    ["Repayment Due Date", formatDate(repayment.dueDate)],
+    ["Repayment Due Date", repayment.dueDate ? formatDate(repayment.dueDate) : "-"],
     ["Loan Amount", formatINR(repayment.loanAmount)],
-    ["Loan Tenure", `${repayment.tenureDays} days`],
-    ["Interest Rate", `${DAILY_INTEREST_RATE}% per day`],
-    ["Interest Accrued", formatINR(repayment.interestAccrued)],
+    ["Loan Tenure", repayment.tenureDays > 0 ? `${repayment.tenureDays} days` : "-"],
+    ["Interest Rate", repayment.interestRate ? String(repayment.interestRate) : "-"],
+    ["Interest Accrued", repayment.interestAccrued > 0 ? formatINR(repayment.interestAccrued) : "-"],
+    ["Paid Amount", repayment.paidAmount > 0 ? formatINR(repayment.paidAmount) : "-"],
   ];
 
   const handlePayment = async () => {
     if (creatingPayment || loading) return;
 
-    if (!applicationId) {
+    if (!effectiveApplicationId) {
       setError("Application details not found. Please verify your PAN again.");
       return;
     }
@@ -275,7 +397,9 @@ const MakePayment = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          applicationId,
+          applicationId: effectiveApplicationId,
+          loanId: isRealLoanId(application?.loan_id) ? application?.loan_id : repaymentLoanId,
+          mobile: repaymentMobile || application?.mobile || "",
           amount: repayment.payableAmount,
           paymentType,
           repaymentAccessToken,
@@ -298,13 +422,6 @@ const MakePayment = () => {
         return;
       }
 
-      if (cashfreeMode === "production" && ["localhost", "127.0.0.1"].includes(window.location.hostname)) {
-        setError(
-          "Cashfree production checkout is available only on the approved live domain."
-        );
-        return;
-      }
-
       await loadCashfreeSdk();
 
       if (!window.Cashfree) {
@@ -319,7 +436,7 @@ const MakePayment = () => {
       });
 
       if (orderId) {
-        await loadPaymentStatus(orderId);
+        await waitForPaymentStatus(orderId);
       }
     } catch (fetchError) {
       console.error("Payment create error:", fetchError);
@@ -382,6 +499,16 @@ const MakePayment = () => {
                     <p className="mt-3 text-sm font-bold text-slate-600">Loading repayment details...</p>
                   </div>
                 </div>
+              ) : !application ? (
+                <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-red-100 bg-red-50 px-5 text-center">
+                  <div>
+                    <ShieldCheck className="mx-auto h-9 w-9 text-red-500" />
+                    <h2 className="mt-4 text-xl font-black text-slate-950">Repayment Not Available</h2>
+                    <p className="mt-2 max-w-md text-sm font-semibold leading-6 text-slate-600">
+                      {error || "This loan has not been disbursed yet. Repayment details will appear after disbursal."}
+                    </p>
+                  </div>
+                </div>
               ) : (
                 <>
                   <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
@@ -414,7 +541,7 @@ const MakePayment = () => {
                         <p className="mt-4 text-sm font-bold text-purple-100">Outstanding Today</p>
                         <p className="mt-1 text-3xl font-black">{formatINR(repayment.outstandingToday)}</p>
                         <p className="mt-3 text-xs font-semibold leading-5 text-purple-100">
-                          Calculated using {repayment.elapsedDays} active day(s) of interest.
+                          Live amount fetched from CRM repayment records.
                         </p>
                       </div>
 
@@ -488,7 +615,7 @@ const MakePayment = () => {
                   <button
                     type="button"
                     onClick={handlePayment}
-                    disabled={creatingPayment || (paymentType === "part" && repayment.payableAmount <= 0)}
+                    disabled={creatingPayment || repayment.outstandingToday <= 0 || repayment.payableAmount <= 0}
                     className="mt-5 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-purple-600 text-base font-black text-white shadow-lg shadow-purple-100 transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                   >
                     {creatingPayment ? (
@@ -498,21 +625,11 @@ const MakePayment = () => {
                       </>
                     ) : (
                       <>
-                        Pay {paymentType === "full" ? formatINR(repayment.outstandingToday) : "Now"}
+                        {repayment.outstandingToday <= 0 ? "No Dues" : `Pay ${paymentType === "full" ? formatINR(repayment.outstandingToday) : "Now"}`}
                         <ArrowRight className="h-5 w-5" />
                       </>
                     )}
                   </button>
-
-                  {paymentStatus.toLowerCase().includes("successful") && (
-                    <button
-                      type="button"
-                      onClick={() => navigate("/repayment/reloan-offer")}
-                      className="mt-3 flex h-12 w-full items-center justify-center rounded-xl border border-green-200 bg-white text-sm font-black text-green-700 transition hover:bg-green-50"
-                    >
-                      Continue
-                    </button>
-                  )}
 
                   <div className="mt-4 flex items-start gap-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-600">
                     <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
@@ -524,6 +641,123 @@ const MakePayment = () => {
           </section>
         </div>
       </main>
+
+      {showReloanOffer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
+          <div className="relative w-full max-w-[448px] overflow-hidden rounded-3xl border border-purple-100 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.35)]">
+            <button
+              type="button"
+              onClick={() => setShowReloanOffer(false)}
+              className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-950"
+              aria-label="Close reloan offer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="bg-slate-950 px-6 pb-6 pt-7 text-white">
+              <div className="flex items-center justify-between gap-4 pr-10">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-orange-300 ring-1 ring-white/10">
+                  <Sparkles className="h-6 w-6" />
+                </span>
+                <span className="rounded-full border border-green-300/25 bg-green-300/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-green-200">
+                  Paid in full
+                </span>
+              </div>
+
+              <p className="mt-6 text-xs font-black uppercase tracking-[0.22em] text-orange-300">
+                Waqt Money
+              </p>
+              <h2 className="mt-2 text-3xl font-black leading-tight">
+                Great news!
+              </h2>
+              <p className="mt-3 text-base font-semibold leading-7 text-slate-200">
+                Your repayment is complete. You are pre-qualified for an instant reloan.
+              </p>
+
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.07] p-4">
+                  <WalletCards className="h-5 w-5 text-orange-300" />
+                  <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                    Eligible limit
+                  </p>
+                  <p className="mt-1 text-xl font-black text-white">Up to {formatLimit(repayment.eligibleLimit)}</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.07] p-4">
+                  <Clock className="h-5 w-5 text-purple-200" />
+                  <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                    Approval time
+                  </p>
+                  <p className="mt-1 text-xl font-black text-white">5 min</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-5 py-5">
+              <div className="rounded-2xl border border-green-100 bg-green-50 px-4 py-4">
+                <p className="text-sm font-bold leading-6 text-slate-700">
+                  <span className="text-green-700">Based on your excellent repayment history,</span>{" "}
+                  you are eligible for a higher amount with better terms.
+                </p>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {[
+                  { icon: Clock, text: "2-min application" },
+                  { icon: ShieldCheck, text: "100% secure" },
+                  { icon: FileText, text: "Minimal docs" },
+                  { icon: TrendingUp, text: "Better terms" },
+                ].map((feature) => {
+                  const Icon = feature.icon;
+
+                  return (
+                    <div
+                      key={feature.text}
+                      className="flex min-h-[66px] items-center gap-3 rounded-2xl border border-purple-100 bg-[#fbfaff] px-3 py-2"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-purple-700 shadow-sm">
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <p className="text-sm font-black leading-tight text-slate-700">
+                        {feature.text}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-5 grid grid-cols-[1.45fr_1fr] gap-3">
+                <button
+                  type="button"
+                  onClick={() => navigate("/user/apply")}
+                  className="flex min-h-[54px] items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#8048e2] to-[#bd56e4] px-4 text-sm font-black text-white shadow-lg shadow-purple-100 transition hover:opacity-95"
+                >
+                  Apply for Reloan
+                  <TrendingUp className="h-4 w-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowReloanOffer(false)}
+                  className="flex min-h-[54px] items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-600 transition hover:bg-slate-50"
+                >
+                  Maybe Later
+                </button>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-2xl bg-slate-50 px-3 py-3 text-[11px] font-bold text-slate-500">
+                <span className="inline-flex items-center gap-1">
+                  <Lock className="h-3.5 w-3.5 text-green-600" />
+                  256-bit encryption
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <Sparkles className="h-3.5 w-3.5 text-orange-500" />
+                  Instant approval
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>

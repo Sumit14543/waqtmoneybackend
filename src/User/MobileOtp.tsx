@@ -5,7 +5,12 @@ import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 import UserProgress from "./UserProgress";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
+
+type OtpDeliveryData = {
+  delivery?: string;
+  channels?: string[];
+};
 
 const MobileOtp = () => {
   const navigate = useNavigate();
@@ -15,10 +20,14 @@ const MobileOtp = () => {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
+  const [editingContact, setEditingContact] = useState(false);
+  const [savingContact, setSavingContact] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(60);
   const inputsRef = useRef<HTMLInputElement[]>([]);
-  const email = sessionStorage.getItem("applyEmail") ?? "";
-  const phone = sessionStorage.getItem("applyPhone") ?? "";
+  const [email, setEmail] = useState(() => sessionStorage.getItem("applyEmail") ?? "");
+  const [phone, setPhone] = useState(() => sessionStorage.getItem("applyPhone") ?? "");
+  const [draftEmail, setDraftEmail] = useState(() => sessionStorage.getItem("applyEmail") ?? "");
+  const [draftPhone, setDraftPhone] = useState(() => sessionStorage.getItem("applyPhone") ?? "");
   const otpRequired = sessionStorage.getItem("otpRequired") === "true";
   const [otpDelivery, setOtpDelivery] = useState(() => sessionStorage.getItem("otpDelivery") ?? "email");
   const [otpChannels, setOtpChannels] = useState<string[]>(() => {
@@ -52,6 +61,39 @@ const MobileOtp = () => {
     } catch {
       return { message: "Server returned an invalid response" };
     }
+  };
+
+  const digitsOnly = (value: string) => value.replace(/\D/g, "");
+
+  const resetOtpEntry = () => {
+    setOtp(["", "", "", "", "", ""]);
+    window.setTimeout(() => inputsRef.current[0]?.focus(), 0);
+  };
+
+  const persistOtpDelivery = (data?: OtpDeliveryData) => {
+    const nextDelivery = data?.delivery || "email";
+    sessionStorage.setItem("otpDelivery", nextDelivery);
+    setOtpDelivery(nextDelivery);
+
+    const nextChannels = Array.isArray(data?.channels) ? data.channels : [];
+    sessionStorage.setItem("otpChannels", JSON.stringify(nextChannels));
+    setOtpChannels(nextChannels);
+  };
+
+  const validateContact = (nextPhone: string, nextEmail: string) => {
+    if (!/^[6-9]\d{9}$/.test(nextPhone)) {
+      return "Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.";
+    }
+
+    if (!nextEmail.trim()) {
+      return "Email is required for OTP delivery.";
+    }
+
+    if (!/^\S+@\S+\.\S+$/.test(nextEmail.trim())) {
+      return "Enter a valid email address.";
+    }
+
+    return "";
   };
 
   const handleChange = (value: string, index: number) => {
@@ -93,6 +135,94 @@ const MobileOtp = () => {
     inputsRef.current[Math.min(pastedOtp.length, 6) - 1]?.focus();
   };
 
+  const sendOtpForContact = async (nextPhone: string, nextEmail: string) => {
+    const response = await fetch(`${API_BASE_URL}/otp/send-otp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ phone: nextPhone, email: nextEmail }),
+    });
+
+    const result = await readJsonResponse(response);
+
+    if (!response.ok) {
+      throw new Error(result.message || "OTP could not be delivered. Please try again.");
+    }
+
+    persistOtpDelivery(result.data);
+    return result;
+  };
+
+  const handleEditContact = () => {
+    setDraftPhone(phone);
+    setDraftEmail(email);
+    setEditingContact(true);
+    setError("");
+    setMessage("");
+  };
+
+  const saveChangedContact = async () => {
+    if (savingContact) return;
+
+    const nextPhone = digitsOnly(draftPhone).slice(0, 10);
+    const nextEmail = draftEmail.trim().toLowerCase();
+    const validationError = validateContact(nextPhone, nextEmail);
+
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    const applicationId =
+      sessionStorage.getItem("applicationId") || localStorage.getItem("applicationId") || "";
+
+    setSavingContact(true);
+    setError("");
+    setMessage("");
+
+    try {
+      if (applicationId) {
+        const updateResponse = await fetch(`${API_BASE_URL}/application/update`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: applicationId,
+            phone: nextPhone,
+            email: nextEmail,
+          }),
+        });
+
+        const updateResult = await readJsonResponse(updateResponse);
+        if (!updateResponse.ok) {
+          throw new Error(updateResult.message || "Unable to update contact details");
+        }
+      }
+
+      await sendOtpForContact(nextPhone, nextEmail);
+
+      setPhone(nextPhone);
+      setEmail(nextEmail);
+      sessionStorage.setItem("applyPhone", nextPhone);
+      localStorage.setItem("applyPhone", nextPhone);
+      sessionStorage.setItem("applyEmail", nextEmail);
+      localStorage.setItem("applyEmail", nextEmail);
+      sessionStorage.setItem("otpRequired", "true");
+
+      setEditingContact(false);
+      setSecondsLeft(60);
+      resetOtpEntry();
+      setMessage("Contact updated. A fresh OTP has been sent.");
+    } catch (fetchError) {
+      console.error("Contact update error:", fetchError);
+      setError(fetchError instanceof Error ? fetchError.message : "Unable to update contact details");
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
   const resendOtp = async () => {
     if ((!phone && !email) || resending || secondsLeft > 0) return;
 
@@ -101,37 +231,13 @@ const MobileOtp = () => {
     setMessage("");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/otp/send-otp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ phone, email: email || undefined }),
-      });
-
-      const result = await readJsonResponse(response);
-
-      if (!response.ok) {
-        const details = Array.isArray(result.details) ? result.details.join(" ") : "";
-        setError(details || result.message || "Unable to resend OTP");
-        return;
-      }
-
-      const nextDelivery = result.data?.delivery || "email";
-      sessionStorage.setItem("otpDelivery", nextDelivery);
-      setOtpDelivery(nextDelivery);
-
-      const nextChannels = result.data?.channels || [];
-      sessionStorage.setItem("otpChannels", JSON.stringify(nextChannels));
-      setOtpChannels(nextChannels);
-
-      setOtp(["", "", "", "", "", ""]);
+      await sendOtpForContact(phone, email);
+      resetOtpEntry();
       setSecondsLeft(60);
       setMessage("OTP resent successfully");
-      inputsRef.current[0]?.focus();
     } catch (fetchError) {
       console.error("OTP resend error:", fetchError);
-      setError("Server not reachable");
+      setError(fetchError instanceof Error ? fetchError.message : "Server not reachable");
     } finally {
       setResending(false);
     }
@@ -174,6 +280,24 @@ const MobileOtp = () => {
       if (!response.ok) {
         setError(result.message || "OTP verification failed");
         return;
+      }
+
+      const applicationId =
+        sessionStorage.getItem("applicationId") || localStorage.getItem("applicationId");
+
+      if (applicationId) {
+        await fetch(`${API_BASE_URL}/application/update`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: applicationId,
+            current_step: "otp_verified",
+          }),
+        }).catch((updateError) => {
+          console.error("OTP step update error:", updateError);
+        });
       }
 
       navigate("/user/basic-details");
@@ -223,7 +347,7 @@ const MobileOtp = () => {
                 <span>{phone || email || "Contact not available"}</span>
                 <button
                   type="button"
-                  onClick={() => navigate("/user/apply")}
+                  onClick={handleEditContact}
                   className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f3eaff] text-[#8048e2]"
                   aria-label="Edit mobile number"
                 >
@@ -239,6 +363,67 @@ const MobileOtp = () => {
             </div>
 
             <div className="px-5 py-7 sm:px-7 sm:py-9">
+              {editingContact && (
+                <div className="mb-6 rounded-2xl border border-[#d8c5ff] bg-[#fbf9ff] p-4">
+                  <h3 className="text-sm font-extrabold text-[#071d3a]">
+                    Change OTP contact
+                  </h3>
+                  <p className="mt-1 text-xs font-medium leading-5 text-[#52657d]">
+                    Update your mobile number or email, then we will send a fresh OTP.
+                  </p>
+
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <label className="text-xs font-bold text-[#071d3a]">
+                        Mobile number
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="tel"
+                        value={draftPhone}
+                        onChange={(event) => setDraftPhone(digitsOnly(event.target.value).slice(0, 10))}
+                        className="mt-1 h-11 w-full rounded-lg border border-[#d8c5ff] bg-white px-3 text-sm font-semibold text-[#071d3a] outline-none focus:border-[#8048e2]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-[#071d3a]">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        autoComplete="email"
+                        value={draftEmail}
+                        onChange={(event) => setDraftEmail(event.target.value)}
+                        className="mt-1 h-11 w-full rounded-lg border border-[#d8c5ff] bg-white px-3 text-sm font-semibold text-[#071d3a] outline-none focus:border-[#8048e2]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingContact(false);
+                        setError("");
+                      }}
+                      className="h-11 rounded-lg border border-[#d8c5ff] bg-white text-sm font-bold text-[#52657d]"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveChangedContact}
+                      disabled={savingContact}
+                      className="h-11 rounded-lg bg-[#8048e2] text-sm font-bold text-white shadow-[0_9px_18px_rgba(128,72,226,0.18)] disabled:opacity-60"
+                    >
+                      {savingContact ? "Sending..." : "Update & Send OTP"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-6 gap-1.5 sm:gap-2 md:gap-3">
                 {otp.map((value, index) => (
                   <input

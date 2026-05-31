@@ -2,6 +2,7 @@ import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 
 export const sendOTP = async (req, res, next) => {
   const { email, phone } = req.body;
+  const isProduction = process.env.NODE_ENV === "production";
 
   try {
     if (!email && !phone) {
@@ -15,11 +16,16 @@ export const sendOTP = async (req, res, next) => {
       return res.status(429).json({ success: false, message: err.message });
     }
     if (err.details) {
-      return res.status(err.statusCode || 500).json({
+      const response = {
         success: false,
         message: err.message,
-        details: err.details,
-      });
+      };
+
+      if (!isProduction) {
+        response.details = err.details;
+      }
+
+      return res.status(err.statusCode || 500).json(response);
     }
     return next(err);
   }

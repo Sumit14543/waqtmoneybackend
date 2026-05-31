@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import UserProgress from "./UserProgress";
 import SelfieUpload from "./SelfieUpload";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 type DocumentRequirement = {
   id: string;

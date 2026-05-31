@@ -1,11 +1,13 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRightCircle, CalendarDays, ChevronDown, FileText, Lock, Zap } from "lucide-react";
+import Swal from "sweetalert2";
+import "sweetalert2/dist/sweetalert2.min.css";
 import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 import BrandLogo from "@/Components/BrandLogo";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 const steps = [
   "Basic Details",
@@ -18,15 +20,28 @@ const steps = [
   "Video KYC",
 ];
 
+type ApplyField = "salary" | "loanAmount" | "purpose" | "hasLoan" | "phone" | "email" | "agree";
+
+const MIN_SALARY = 20000;
+const MIN_LOAN_AMOUNT = 5000;
+
 const Apply = () => {
   const navigate = useNavigate();
+  const formRef = useRef<HTMLFormElement>(null);
+  const salaryRef = useRef<HTMLInputElement>(null);
+  const loanAmountRef = useRef<HTMLInputElement>(null);
+  const purposeRef = useRef<HTMLSelectElement>(null);
+  const hasLoanNoRef = useRef<HTMLButtonElement>(null);
+  const phoneRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const agreeRef = useRef<HTMLInputElement>(null);
 
   const [showIntro, setShowIntro] = useState(true);
   const [employment, setEmployment] = useState("salaried");
   const [salary, setSalary] = useState("");
   const [loanAmount, setLoanAmount] = useState("");
-  const [purpose, setPurpose] = useState("Marriage");
-  const [hasLoan, setHasLoan] = useState("no");
+  const [purpose, setPurpose] = useState("");
+  const [hasLoan, setHasLoan] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [agree, setAgree] = useState(true);
@@ -46,37 +61,131 @@ const Apply = () => {
 
   const parseAmount = (value: string) => value.replace(/,/g, "");
 
+  const formatCurrency = (amount: number) => `Rs ${new Intl.NumberFormat("en-IN").format(amount)}`;
 
-  const validate = () => {
-    if (!salary || Number(parseAmount(salary)) < 5000) {
-      return "Enter valid salary (min Rs 5000)";
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+
+  const focusField = (field: ApplyField) => {
+    const focusMap = {
+      salary: salaryRef.current,
+      loanAmount: loanAmountRef.current,
+      purpose: purposeRef.current,
+      hasLoan: hasLoanNoRef.current,
+      phone: phoneRef.current,
+      email: emailRef.current,
+      agree: agreeRef.current,
+    };
+
+    const target = focusMap[field];
+    target?.focus();
+
+    if (target instanceof HTMLInputElement && target.type === "text") {
+      target.select();
+    }
+  };
+
+  const showError = async (message: string, field?: ApplyField) => {
+    setError(message);
+
+    await Swal.fire({
+      icon: "error",
+      title: "Action needed",
+      html: `<p class="mx-auto max-w-[300px] text-sm font-medium leading-6 text-slate-600">${escapeHtml(message)}</p>`,
+      width: 420,
+      padding: "2rem 1.75rem 1.5rem",
+      background: "#ffffff",
+      color: "#071d3a",
+      iconColor: "#ef646c",
+      backdrop: "rgba(15, 23, 42, 0.58)",
+      confirmButtonText: "Got it",
+      buttonsStyling: false,
+      showClass: {
+        popup: "swal2-show",
+        backdrop: "swal2-backdrop-show",
+      },
+      hideClass: {
+        popup: "swal2-hide",
+        backdrop: "swal2-backdrop-hide",
+      },
+      customClass: {
+        popup:
+          "rounded-[22px] border border-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.22)]",
+        icon: "mt-1 border-[3px]",
+        title: "pt-2 text-[24px] font-extrabold tracking-normal text-slate-950",
+        htmlContainer: "mt-1",
+        actions: "mt-6",
+        confirmButton:
+          "inline-flex h-11 min-w-[120px] items-center justify-center rounded-xl bg-gradient-to-r from-[#8048e2] to-[#bd56e4] px-6 text-sm font-bold text-white shadow-[0_12px_24px_rgba(128,72,226,0.28)] outline-none transition hover:opacity-95 focus-visible:ring-4 focus-visible:ring-purple-200",
+      },
+    });
+
+    focusField(field || "salary");
+  };
+
+  const validate = (): { message: string; field: ApplyField } | null => {
+    const salaryAmount = Number(parseAmount(salary));
+    const requestedLoanAmount = Number(parseAmount(loanAmount));
+
+    if (!salary) {
+      return { message: "Please enter your monthly salary.", field: "salary" };
     }
 
-    if (!loanAmount || Number(parseAmount(loanAmount)) < 1000) {
-      return "Enter valid loan amount";
+    if (salaryAmount < MIN_SALARY) {
+      return {
+        message: `Salary less than ${formatCurrency(MIN_SALARY)} is not accepted.`,
+        field: "salary",
+      };
+    }
+
+    if (!loanAmount) {
+      return { message: "Please enter the loan amount you need.", field: "loanAmount" };
+    }
+
+    if (requestedLoanAmount < MIN_LOAN_AMOUNT) {
+      return {
+        message: `Loan amount less than ${formatCurrency(MIN_LOAN_AMOUNT)} is not accepted.`,
+        field: "loanAmount",
+      };
     }
 
     if (!purpose) {
-      return "Please select loan purpose";
+      return { message: "Please select the purpose of your loan.", field: "purpose" };
     }
 
     if (!hasLoan) {
-      return "Please select running loan status";
+      return { message: "Please tell us if you already have a running loan.", field: "hasLoan" };
+    }
+
+    if (!phone) {
+      return { message: "Please enter your mobile number.", field: "phone" };
     }
 
     if (!/^[6-9]\d{9}$/.test(phone)) {
-      return "Enter valid 10-digit phone number";
+      return {
+        message: "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.",
+        field: "phone",
+      };
     }
 
-    if (email && !/^\S+@\S+\.\S+$/.test(email)) {
-      return "Enter valid email";
+    if (!email.trim()) {
+      return { message: "Please enter your email address.", field: "email" };
+    }
+
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      return { message: "Please enter a valid email address.", field: "email" };
     }
 
     if (!agree) {
-      return "Please accept Terms & Privacy Policy";
+      return { message: "Please accept the Terms and Privacy Policy to continue.", field: "agree" };
     }
 
-    return "";
+    return null;
   };
 
   const readJsonResponse = async (res: Response) => {
@@ -114,6 +223,9 @@ const Apply = () => {
   const getResumePath = (currentStep?: string) => {
     const step = String(currentStep || "").toLowerCase();
     const routes: Record<string, string> = {
+      otp_pending: "/user/otp",
+      apply_started: "/user/otp",
+      otp_verified: "/user/basic-details",
       basic_details: "/user/pan-verification",
       pan_verify: "/user/kyc-aadhaar",
       aadhaar_verify: "/user/kyc-aadhaar",
@@ -127,7 +239,7 @@ const Apply = () => {
       documents_uploaded: "/user/customer-video-kyc",
       video_kyc_completed: "/user/loan-status",
     };
-
+      
     return routes[step] || "/user/otp";
   };
 
@@ -151,8 +263,8 @@ const Apply = () => {
     setEmployment("salaried");
     setSalary("");
     setLoanAmount("");
-    setPurpose("Marriage");
-    setHasLoan("no");
+    setPurpose("");
+    setHasLoan("");
     setPhone("");
     setEmail("");
     setAgree(true);
@@ -200,13 +312,54 @@ const Apply = () => {
         sessionStorage.setItem("applyPan", String(application.pan_number));
       }
 
-      navigate(getResumePath(application.current_step));
+      navigate(getResumePath(application.current_step), { replace: true });
     } catch (fetchError) {
       console.error("Resume application error:", fetchError);
-      setError("Unable to resume application. Please try fresh.");
+      showError("Unable to resume application. Please try fresh.");
     } finally {
       setResumeLoading(false);
     }
+  };
+
+  const moveToNextControl = (target: HTMLElement) => {
+    const controls = Array.from(
+      formRef.current?.querySelectorAll<HTMLElement>("[data-apply-control]") || []
+    ).filter((control) => !control.hasAttribute("disabled"));
+    const currentIndex = controls.indexOf(target);
+    const nextControl = controls[currentIndex + 1];
+
+    if (nextControl) {
+      nextControl.focus();
+      return;
+    }
+
+    handleSubmit();
+  };
+
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key !== "Enter") return;
+
+    const target = e.target as HTMLElement;
+    const canMoveFocus = target.hasAttribute("data-apply-control");
+
+    if (!canMoveFocus) return;
+
+    e.preventDefault();
+
+    if (target instanceof HTMLButtonElement) {
+      target.click();
+      const nextField = target.dataset.nextField as ApplyField | undefined;
+      if (nextField) {
+        focusField(nextField);
+        return;
+      }
+    } else if (target instanceof HTMLInputElement && target.type === "checkbox") {
+      target.click();
+      handleSubmit();
+      return;
+    }
+
+    moveToNextControl(target);
   };
 
   const handleSubmit = async () => {
@@ -214,7 +367,7 @@ const Apply = () => {
 
     const validationError = validate();
     if (validationError) {
-      setError(validationError);
+      showError(validationError.message, validationError.field);
       return;
     }
 
@@ -225,7 +378,7 @@ const Apply = () => {
       employment,
       salary: Number(parseAmount(salary)),
       phone,
-      email: email || undefined,
+      email: email.trim(),
       termsAccepted: agree,
     };
 
@@ -247,14 +400,14 @@ const Apply = () => {
       const appResult = await readJsonResponse(appRes);
 
       if (!appRes.ok) {
-        setError(appResult.message || "Application failed");
+        showError(appResult.message || "Application failed");
         return;
       }
 
       const applicationId = appResult.data?.applicationId || appResult.data?.id;
 
       if (!applicationId) {
-        setError("Application ID not received from server");
+        showError("Application ID not received from server");
         return;
       }
 
@@ -272,7 +425,7 @@ const Apply = () => {
       const loanResult = await readJsonResponse(loanRes);
 
       if (!loanRes.ok) {
-        setError(loanResult.message || "Loan details failed");
+        showError(loanResult.message || "Loan details failed");
         return;
       }
 
@@ -281,14 +434,13 @@ const Apply = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ phone, email: email || undefined }),
+        body: JSON.stringify({ phone, email: email.trim() }),
       });
 
       const otpResult = await readJsonResponse(otpRes);
 
       if (!otpRes.ok) {
-        const details = Array.isArray(otpResult.details) ? otpResult.details.join(" ") : "";
-        setError(details || otpResult.message || "Failed to send mobile OTP");
+        showError(otpResult.message || "OTP could not be delivered. Please try again.");
         return;
       }
 
@@ -300,22 +452,17 @@ const Apply = () => {
         "otpChannels",
         JSON.stringify(otpResult.data?.channels || ["Email"])
       );
-      if (email) {
-        sessionStorage.setItem("applyEmail", email);
-        localStorage.setItem("applyEmail", email);
-      } else {
-        sessionStorage.removeItem("applyEmail");
-        localStorage.removeItem("applyEmail");
-      }
+      sessionStorage.setItem("applyEmail", email.trim());
+      localStorage.setItem("applyEmail", email.trim());
       sessionStorage.setItem("employment", employment);
       localStorage.setItem("applicationId", String(applicationId));
       localStorage.setItem("applyPhone", phone);
       localStorage.setItem("employment", employment);
 
-      navigate("/user/otp");
+      navigate("/user/otp", { replace: true });
     } catch (fetchError) {
       console.error("Fetch error:", fetchError);
-      setError("Server not reachable");
+      showError("Server not reachable");
     } finally {
       setLoading(false);
     }
@@ -601,10 +748,13 @@ const Apply = () => {
           </div>
 
           <form
+            ref={formRef}
+            noValidate
             onSubmit={(e) => {
               e.preventDefault();
               handleSubmit();
             }}
+            onKeyDown={handleFormKeyDown}
             className="mx-auto w-full max-w-[760px] overflow-hidden rounded-2xl border border-[#dfe7f2] bg-white shadow-[0_18px_60px_rgba(32,56,85,0.10)]"
           >
             <div className="border-b border-[#dfe7f2] px-5 py-7 text-center sm:px-6 md:px-10">
@@ -613,7 +763,7 @@ const Apply = () => {
               </div>
 
               <h2 className="mt-4 text-xl font-bold text-[#071d3a]">
-                Apply for Payday Loan
+                Apply for Payday Loan 
               </h2>
 
               <p className="mt-2 text-sm font-medium text-[#52657d]">
@@ -623,7 +773,10 @@ const Apply = () => {
 
             <div className="px-5 py-7 sm:px-6 sm:py-8 md:px-10 md:py-10">
               {error && (
-                <p className="mb-5 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-center text-sm font-medium text-red-600">
+                <p
+                  aria-live="polite"
+                  className="mb-5 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-center text-sm font-medium text-red-600"
+                >
                   {error}
                 </p>
               )}
@@ -637,6 +790,9 @@ const Apply = () => {
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <button
                       type="button"
+                      data-apply-control
+                      data-next-field="salary"
+                      aria-pressed={employment === "salaried"}
                       onClick={() => setEmployment("salaried")}
                       className={`h-[47px] rounded-lg border text-sm font-bold transition ${employment === "salaried"
                           ? "border-[#8048e2] bg-[#8048e2] text-white shadow-[0_9px_18px_rgba(128,72,226,0.22)]"
@@ -648,6 +804,9 @@ const Apply = () => {
 
                     <button
                       type="button"
+                      data-apply-control
+                      data-next-field="salary"
+                      aria-pressed={employment === "self"}
                       onClick={() => setEmployment("self")}
                       className={`h-[47px] rounded-lg border text-sm font-bold transition ${employment === "self"
                           ? "border-[#8048e2] bg-[#8048e2] text-white shadow-[0_9px_18px_rgba(128,72,226,0.22)]"
@@ -669,6 +828,8 @@ const Apply = () => {
                       {"\u20b9"}
                     </span>
                     <input
+                      ref={salaryRef}
+                      data-apply-control
                       type="text"
                       inputMode="numeric"
                       autoComplete="off"
@@ -678,6 +839,9 @@ const Apply = () => {
                       className="min-w-0 flex-1 px-4 text-base font-semibold text-[#071d3a] outline-none"
                     />
                   </div>
+                  <p className="mt-2 text-xs font-medium text-[#718096]">
+                    Minimum monthly salary: {formatCurrency(MIN_SALARY)}
+                  </p>
                 </div>
 
                 <div>
@@ -690,6 +854,8 @@ const Apply = () => {
                       {"\u20b9"}
                     </span>
                     <input
+                      ref={loanAmountRef}
+                      data-apply-control
                       type="text"
                       inputMode="numeric"
                       autoComplete="off"
@@ -699,6 +865,9 @@ const Apply = () => {
                       className="min-w-0 flex-1 px-4 text-base font-semibold text-[#071d3a] outline-none"
                     />
                   </div>
+                  <p className="mt-2 text-xs font-medium text-[#718096]">
+                    Minimum loan amount: {formatCurrency(MIN_LOAN_AMOUNT)}
+                  </p>
                 </div>
 
                 <div>
@@ -708,6 +877,8 @@ const Apply = () => {
 
                   <div className="relative mt-3">
                     <select
+                      ref={purposeRef}
+                      data-apply-control
                       value={purpose}
                       autoComplete="off"
                       onChange={(e) => setPurpose(e.target.value)}
@@ -733,7 +904,11 @@ const Apply = () => {
 
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <button
+                      ref={hasLoanNoRef}
                       type="button"
+                      data-apply-control
+                      data-next-field="phone"
+                      aria-pressed={hasLoan === "no"}
                       onClick={() => setHasLoan("no")}
                       className={`h-[47px] rounded-lg border text-sm font-bold transition ${hasLoan === "no"
                           ? "border-[#8048e2] bg-[#8048e2] text-white shadow-[0_9px_18px_rgba(128,72,226,0.22)]"
@@ -742,9 +917,11 @@ const Apply = () => {
                     >
                       No
                     </button>
-
                     <button
                       type="button"
+                      data-apply-control
+                      data-next-field="phone"
+                      aria-pressed={hasLoan === "yes"}
                       onClick={() => setHasLoan("yes")}
                       className={`h-[47px] rounded-lg border text-sm font-bold transition ${hasLoan === "yes"
                           ? "border-[#8048e2] bg-[#8048e2] text-white shadow-[0_9px_18px_rgba(128,72,226,0.22)]"
@@ -768,6 +945,8 @@ const Apply = () => {
                       <ChevronDown className="h-3 w-3 text-[#4d6380]" />
                     </span>
                     <input
+                      ref={phoneRef}
+                      data-apply-control
                       type="text"
                       inputMode="numeric"
                       autoComplete="tel"
@@ -781,10 +960,12 @@ const Apply = () => {
 
                 <div>
                   <label className="text-sm font-bold text-[#071d3a]">
-                    Email <span className="text-[#718096]"></span>
+                    Email <span className="text-red-500">*</span>
                   </label>
 
                   <input
+                    ref={emailRef}
+                    data-apply-control
                     type="email"
                     autoComplete="email"
                     value={email}
@@ -799,6 +980,8 @@ const Apply = () => {
 
               <label className="mt-5 flex items-start gap-3 text-sm font-medium leading-6 text-[#52657d]">
                 <input
+                  ref={agreeRef}
+                  data-apply-control
                   type="checkbox"
                   autoComplete="off"
                   checked={agree}

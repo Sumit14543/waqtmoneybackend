@@ -1,28 +1,28 @@
 const TestimonialsSection = () => {
-  const cardsData = [
+    const cardsData = [
     {
-        image: '/testimonals-img-1.jpg',
+        image: '/testimonial-avatar-1.jpg',
         name: 'Rahul Sharma',
         handle: 'Delhi',
         rating: 5,
         review: 'Waqt Money provided me with an instant salary advance during an emergency. The process was very fast and easy.'
     },
     {
-        image: '/testimonals-img-3.jpg',
+        image: '/testimonial-avatar-3.jpg',
         name: 'Priya Verma',
         handle: 'Noida',
         rating: 4,
         review: 'I got a loan on my salary without any hassle. The documentation process was also simple.'
     },
     {
-        image: '/testimonal-img-2.jpg',
+        image: '/testimonial-avatar-2.jpg',
         name: 'Amit Singh',
         handle: 'Gurgaon',
         rating: 5,
         review: 'Instant approval and quick disbursal solved my financial problem.'
     },
     {
-        image: '/testimonals-img-4.jpg',
+        image: '/testimonial-avatar-4.jpg',
         name: 'Neha Gupta',
         handle: 'Faridabad',
         rating: 4,
@@ -59,7 +59,15 @@ const TestimonialsSection = () => {
         <div className="p-5 sm:p-6 rounded-2xl mx-3 sm:mx-5 shadow-md hover:shadow-2xl transition-all duration-300 w-[84vw] max-w-[360px] sm:w-96 sm:max-w-none shrink-0 bg-white">
             
             <div className="flex gap-3 items-center">
-                <img className="w-14 h-14 rounded-full object-cover" src={card.image} alt="User" />
+                <img
+                    className="h-14 w-14 rounded-full object-cover"
+                    src={card.image}
+                    alt={`${card.name} testimonial`}
+                    width={56}
+                    height={56}
+                    loading="lazy"
+                    decoding="async"
+                />
                 
                 <div className="flex flex-col">
                     <p className="font-semibold text-lg">{card.name}</p>

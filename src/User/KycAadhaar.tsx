@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { IdCard } from "lucide-react";
+import Swal from "sweetalert2";
+import "sweetalert2/dist/sweetalert2.min.css";
 import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 import UserProgress from "./UserProgress";
 import { useNavigate } from "react-router-dom";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 const KycAadhaar = () => {
   const navigate = useNavigate();
@@ -14,21 +16,85 @@ const KycAadhaar = () => {
   const [aadhaarMasked, setAadhaarMasked] = useState(() => sessionStorage.getItem("aadhaarMasked") || "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [skipLoading, setSkipLoading] = useState(false);
+
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+
+  const showError = async (message: string) => {
+    setError(message);
+
+    await Swal.fire({
+      icon: "error",
+      title: "Action needed",
+      html: `<p class="mx-auto max-w-[300px] text-sm font-medium leading-6 text-slate-600">${escapeHtml(message)}</p>`,
+      width: 420,
+      padding: "2rem 1.75rem 1.5rem",
+      background: "#ffffff",
+      color: "#071d3a",
+      iconColor: "#ef646c",
+      backdrop: "rgba(15, 23, 42, 0.58)",
+      confirmButtonText: "Got it",
+      buttonsStyling: false,
+      customClass: {
+        popup:
+          "rounded-[22px] border border-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.22)]",
+        icon: "mt-1 border-[3px]",
+        title: "pt-2 text-[24px] font-extrabold tracking-normal text-slate-950",
+        htmlContainer: "mt-1",
+        actions: "mt-6",
+        confirmButton:
+          "inline-flex h-11 min-w-[120px] items-center justify-center rounded-xl bg-gradient-to-r from-[#8048e2] to-[#bd56e4] px-6 text-sm font-bold text-white shadow-[0_12px_24px_rgba(128,72,226,0.28)] outline-none transition hover:opacity-95 focus-visible:ring-4 focus-visible:ring-purple-200",
+      },
+    });
+  };
 
   useEffect(() => {
     const aadhaarStatus = new URLSearchParams(window.location.search).get("aadhaar");
-
-    if (aadhaarStatus === "failed") {
-      setError("Aadhaar verification failed. Please try again.");
-    }
-
-    if (aadhaarStatus === "expired") {
-      setError("Aadhaar verification session expired. Please try again.");
-    }
-
     const applicationId =
-      sessionStorage.getItem("applicationId") || localStorage.getItem("applicationId");
+      sessionStorage.getItem("applicationId") ||
+      localStorage.getItem("applicationId") ||
+      localStorage.getItem("aadhaarPendingApplicationId");
+
+    if (aadhaarStatus === "failed" || aadhaarStatus === "expired") {
+      setLoading(true);
+      setError("");
+      fetch(`${API_BASE_URL}/react-aadhaar/complete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: applicationId || "" }),
+      })
+        .then(async (response) => {
+          const result = await readJsonResponse(response);
+          if (!response.ok || !result.success) {
+            throw new Error(result.message || "Aadhaar verification failed. Please try again.");
+          }
+
+          const masked = result.data?.aadhaarMasked || "";
+          if (masked) {
+            setAadhaarMasked(masked);
+            sessionStorage.setItem("aadhaarMasked", masked);
+          }
+
+          localStorage.removeItem("aadhaarPendingApplicationId");
+          navigate(result.data?.nextPath || "/user/work-details", { replace: true });
+        })
+        .catch((completeError) => {
+          console.error("Aadhaar completion error:", completeError);
+          setError(
+            aadhaarStatus === "expired"
+              ? "Aadhaar verification session expired. Please try again."
+              : "Aadhaar verification failed. Please try again."
+          );
+        })
+        .finally(() => setLoading(false));
+    }
 
     let savedPan = sessionStorage.getItem("applyPan") || "";
     const savedPanVerification = sessionStorage.getItem("panVerification");
@@ -178,7 +244,7 @@ const KycAadhaar = () => {
     if (loading) return;
 
     if (aadhaar.length !== 12) {
-      setError("Enter valid 12-digit Aadhaar number");
+      showError("Enter valid 12-digit Aadhaar number");
       return;
     }
 
@@ -186,11 +252,13 @@ const KycAadhaar = () => {
       sessionStorage.getItem("applicationId") || localStorage.getItem("applicationId");
 
     if (!applicationId) {
-      setError("Application session not found. Please start again.");
+      showError("Application session not found. Please start again.");
       return;
     }
 
     sessionStorage.setItem("applicationId", applicationId);
+    localStorage.setItem("applicationId", applicationId);
+    localStorage.setItem("aadhaarPendingApplicationId", applicationId);
 
     setLoading(true);
     setError("");
@@ -210,7 +278,7 @@ const KycAadhaar = () => {
       const result = await readJsonResponse(response);
 
       if (!response.ok) {
-        setError(result.message || "Failed to save Aadhaar");
+        showError(result.message || "Failed to save Aadhaar");
         return;
       }
 
@@ -218,59 +286,24 @@ const KycAadhaar = () => {
       setAadhaarMasked(masked);
       sessionStorage.setItem("aadhaarMasked", masked);
 
+      if (result.data?.nextPath) {
+        localStorage.removeItem("aadhaarPendingApplicationId");
+        navigate(result.data.nextPath);
+        return;
+      }
+
       if (result.data?.authorizationUrl) {
         window.location.href = result.data.authorizationUrl;
         return;
       }
 
-      setError("Aadhaar verification URL not received");
+      localStorage.removeItem("aadhaarPendingApplicationId");
+      navigate("/user/work-details");
     } catch (fetchError) {
       console.error("Aadhaar save error:", fetchError);
-      setError("Server not reachable");
+      showError("Server not reachable");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSkip = async () => {
-    if (skipLoading) return;
-
-    const applicationId =
-      sessionStorage.getItem("applicationId") || localStorage.getItem("applicationId");
-
-    if (!applicationId) {
-      setError("Application session not found. Please start again.");
-      return;
-    }
-
-    sessionStorage.setItem("applicationId", applicationId);
-    setSkipLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/react-aadhaar/skip`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: applicationId,
-        }),
-      });
-
-      const result = await readJsonResponse(response);
-
-      if (!response.ok) {
-        setError(result.message || "Failed to skip Aadhaar verification");
-        return;
-      }
-
-      navigate(result.data?.nextPath || "/user/work-details");
-    } catch (fetchError) {
-      console.error("Aadhaar skip error:", fetchError);
-      setError("Server not reachable");
-    } finally {
-      setSkipLoading(false);
     }
   };
 
@@ -338,20 +371,11 @@ const KycAadhaar = () => {
           {/* BUTTON */}
           <button
             onClick={handleSubmit}
-            disabled={loading || skipLoading}
+            disabled={loading}
             className="mt-5 h-[52px] w-full rounded-lg bg-gradient-to-r from-[#8048e2] to-[#bd56e4] text-sm font-bold text-white shadow-[0_9px_18px_rgba(128,72,226,0.22)] transition hover:opacity-90 disabled:opacity-60"
           >
             {loading ? "Saving..." : "Continue"}
           </button>
-
-          <button
-            type="button"
-            onClick={handleSkip}
-            disabled={loading || skipLoading}
-            className="mt-3 h-[52px] w-full rounded-lg border border-[#d8c5ff] bg-white text-sm font-bold text-[#8048e2] transition hover:bg-[#f7f1ff] disabled:opacity-60"
-          >
-            {skipLoading ? "Skipping..." : "Skip Aadhaar for now"}
-            </button>
           </div>
 
         </div>

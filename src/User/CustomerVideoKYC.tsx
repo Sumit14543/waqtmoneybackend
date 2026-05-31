@@ -5,7 +5,7 @@ import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 import UserProgress from "./UserProgress";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 const getStoredApplicationId = () =>
   sessionStorage.getItem("applicationId") || localStorage.getItem("applicationId") || "";
@@ -43,7 +43,7 @@ const VideoVerification: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   const phrase =
-    `Hello, My name is ${customerName || "customer"}, I am availing a short term personal loan from Waqt Finance and I authorize the NBFC to visit and contact me at my residence or workplace in case of default in repayment by me.`;
+    `Hello, My name is ${customerName || "customer"}, I am availing a short term personal loan from Waqt Money and I authorize the NBFC to visit and contact me at my residence or workplace in case of default in repayment by me.`;
 
   const clearRecordingTimer = () => {
     if (timerRef.current) {

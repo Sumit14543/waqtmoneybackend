@@ -10,13 +10,13 @@ const Navbar = () => {
 
   const links = [
     { name: "Home", path: "/" },
-    { name: "Services", path: "/Services" },
-    { name: "Faqs", path: "/Faqs" },
-    { name: "EMI Calculator", path: "/Emi-Calculator" },
-    { name: "Repay", path: "/Repayment" },
-    { name: "Policies", path: "/Policies" },
-    { name: "About", path: "/About" },
-    { name: "Contact", path: "/Contact" },
+    { name: "Services", path: "/services" },
+    { name: "Faqs", path: "/faqs" },
+    { name: "EMI Calculator", path: "/emi-calculator" },
+    { name: "Repay", path: "/repayment" },
+    { name: "Policies", path: "/policies" },
+    { name: "About", path: "/about" },
+    { name: "Contact", path: "/contact" },
   ];
 
   const renderLinks = (isMobile = false) =>

@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 type ErrorsType = {
   amount?: string;

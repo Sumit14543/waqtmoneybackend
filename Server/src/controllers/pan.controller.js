@@ -5,12 +5,30 @@ import logger from "../utils/logger.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
 const LEGACY_APPLICATION_TABLE = "loan_applications";
+const DUPLICATE_PAN_MESSAGE =
+  "This PAN number has already been used for a loan application. Please use a different PAN.";
 
 const isProduction = () => process.env.NODE_ENV === "production" || process.env.APP_ENV === "production";
 
 const isLocalPanMockEnabled = () =>
   process.env.PAN_MOCK_IN_LOCAL === "true" ||
   (!isProduction() && process.env.PAN_MOCK_IN_LOCAL !== "false");
+
+const buildApplicationLookup = (value) => {
+  const lookupValue = String(value || "").trim();
+
+  if (/^\d+$/.test(lookupValue)) {
+    return {
+      clause: "(id = ? OR application_id = ?)",
+      values: [Number(lookupValue), lookupValue],
+    };
+  }
+
+  return {
+    clause: "application_id = ?",
+    values: [lookupValue],
+  };
+};
 
 const createLocalPanDetails = (pan) => ({
   result: {},
@@ -51,6 +69,43 @@ const tableExists = async (tableName) => {
   );
 
   return rows.length > 0;
+};
+
+const findDuplicatePanApplication = async (pan, applicationId) => {
+  if (!(await tableExists(APPLICATION_TABLE))) return null;
+
+  const values = [pan];
+  let excludeCurrentApplication = "";
+
+  if (applicationId) {
+    const lookup = buildApplicationLookup(applicationId);
+    excludeCurrentApplication = ` AND NOT (${lookup.clause})`;
+    values.push(...lookup.values);
+  }
+
+  const [rows] = await db.execute(
+    `SELECT id, application_id
+     FROM ${APPLICATION_TABLE}
+     WHERE pan_number = ?
+       AND pan_number IS NOT NULL
+       AND pan_number <> ''
+       ${excludeCurrentApplication}
+     ORDER BY last_activity_at DESC, id DESC
+     LIMIT 1`,
+    values
+  );
+
+  return rows[0] || null;
+};
+
+const assertPanNotAlreadyUsed = async (pan, applicationId) => {
+  const duplicateApplication = await findDuplicatePanApplication(pan, applicationId);
+
+  if (duplicateApplication) {
+    const error = new Error(DUPLICATE_PAN_MESSAGE);
+    error.statusCode = 409;
+    throw error;
+  }
 };
 
 const getLegacyUanByApplicationId = async (applicationId) => {
@@ -232,6 +287,7 @@ const savePanVerification = async ({ applicationId, pan, fullName, dob, uanNumbe
 
   await ensureApplicationColumns([["uan_number", "varchar(20) NULL"]]);
 
+  const lookup = buildApplicationLookup(applicationId);
   const [result] = await db.execute(
     `UPDATE ${APPLICATION_TABLE}
      SET pan_number = ?,
@@ -240,8 +296,8 @@ const savePanVerification = async ({ applicationId, pan, fullName, dob, uanNumbe
          uan_number = COALESCE(?, uan_number),
          current_step = 'pan_verify',
          last_activity_at = NOW()
-     WHERE id = ? OR application_id = ?`,
-    [pan, fullName, dob, uanNumber || null, applicationId, applicationId]
+     WHERE ${lookup.clause}`,
+    [pan, fullName, dob, uanNumber || null, ...lookup.values]
   );
 
   if (result.affectedRows === 0) {
@@ -278,7 +334,7 @@ const sendPanVerificationResponse = (res, {
 });
 
 export const verifyPan = async (req, res) => {
-  const PAN_Number = String(req.body.PAN_Number || req.body.pan || "").toUpperCase();
+  const PAN_Number = String(req.body.PAN_Number || req.body.pan || "").trim().toUpperCase();
   const applicationId = req.body.applicationId || req.body.id || null;
   logger.debug("PAN verification requested:", { hasPan: Boolean(PAN_Number), hasApplicationId: Boolean(applicationId) });
 
@@ -291,6 +347,8 @@ export const verifyPan = async (req, res) => {
   }
 
   try {
+    await assertPanNotAlreadyUsed(PAN_Number, applicationId);
+
     const panApiToken = process.env.BIFROST_API_TOKEN || process.env.PAN_API_KEY || "";
 
     if (!panApiToken && isLocalPanMockEnabled()) {
@@ -386,12 +444,13 @@ export const verifyPan = async (req, res) => {
     if (applicationId) {
       await ensureApplicationColumns([["uan_number", "varchar(20) NULL"]]);
 
+      const lookup = buildApplicationLookup(applicationId);
       const [applicationRows] = await db.execute(
         `SELECT mobile, uan_number
          FROM ${APPLICATION_TABLE}
-         WHERE id = ? OR application_id = ?
+         WHERE ${lookup.clause}
          LIMIT 1`,
-        [applicationId, applicationId]
+        lookup.values
       );
 
       const application = applicationRows[0];
@@ -459,25 +518,73 @@ export const verifyPan = async (req, res) => {
 };
 
 export const getCityByPincode = async (req, res) => {
-  const { pincode } = req.body;
+  const pincode = String(req.body.pincode || "").replace(/\D/g, "").slice(0, 6);
   if (!pincode) {
     return res.status(400).json({ message: "Pincode is required" });
   }
 
-  try {
+  if (!/^\d{6}$/.test(pincode)) {
+    return res.status(400).json({ message: "Invalid pincode" });
+  }
+
+  const titleCase = (value) =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+
+  const fetchIndiaPostPincode = async () => {
     const response = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
     const data = await response.json();
 
-    if (data && data[0] && data[0].Status === "Success") {
+    if (data?.[0]?.Status === "Success" && data[0].PostOffice?.length) {
       const postOffice = data[0].PostOffice[0];
-      return res.json({
-        success: true,
-        city: postOffice.District || postOffice.Block || postOffice.Region,
-        state: postOffice.State
-      });
-    } else {
+
+      return {
+        city: postOffice.District || postOffice.Block || postOffice.Region || "",
+        state: postOffice.State || "",
+      };
+    }
+
+    return null;
+  };
+
+  const fetchPincodesInfo = async () => {
+    const response = await fetch(`https://pincodesinfo.in/api/pincode/${pincode}`);
+    const data = await response.json();
+    const result = data?.results?.[0];
+
+    if (data?.success && result) {
+      return {
+        city: titleCase(result.district || result.taluk || result.office_name),
+        state: titleCase(result.state),
+      };
+    }
+
+    return null;
+  };
+
+  try {
+    let location = null;
+
+    try {
+      location = await fetchIndiaPostPincode();
+    } catch (error) {
+      logger.warn("India Post pincode API failed:", error.message);
+    }
+
+    if (!location) {
+      location = await fetchPincodesInfo();
+    }
+
+    if (!location?.city) {
       return res.status(404).json({ message: "Invalid pincode" });
     }
+
+    return res.json({
+      success: true,
+      city: location.city,
+      state: location.state,
+    });
   } catch (error) {
     logger.error("Pincode API Error:", error.message);
     return res.status(500).json({ message: "Failed to fetch city details" });

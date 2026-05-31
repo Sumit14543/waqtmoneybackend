@@ -17,7 +17,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 const paymentOptions = [
   {
@@ -43,6 +43,12 @@ const steps = [
   "Complete payment and save the transaction reference.",
   "Share confirmation with support if asked.",
 ];
+
+const REPAYMENT_OTP_DISABLED = false;
+const isRealLoanId = (value?: string | null) => {
+  const id = String(value || "").trim();
+  return Boolean(id) && !/^WAQTMN-PD-/i.test(id);
+};
 
 const Repayment = () => {
   const navigate = useNavigate();
@@ -96,6 +102,10 @@ const Repayment = () => {
 
   const handlePanChange = (value: string) => {
     setPan(value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10));
+    resetRepaymentOtpState();
+  };
+
+  const resetRepaymentOtpState = () => {
     setOtp(["", "", "", "", "", ""]);
     setOtpRequested(false);
     setOtpTarget("");
@@ -108,6 +118,8 @@ const Repayment = () => {
 
   const handleGetOtp = async (event?: React.FormEvent) => {
     event?.preventDefault();
+
+    if (REPAYMENT_OTP_DISABLED) return;
 
     if (sendingOtp) return;
 
@@ -149,6 +161,9 @@ const Repayment = () => {
       }
 
       const targets = [result.data?.maskedPhone, result.data?.maskedEmail].filter(Boolean);
+      if (result.data?.mobile) {
+        sessionStorage.setItem("repaymentMobile", result.data.mobile);
+      }
 
       setOtp(["", "", "", "", "", ""]);
       setOtpRequested(true);
@@ -249,9 +264,23 @@ const Repayment = () => {
       setSecondsLeft(0);
       sessionStorage.setItem("repaymentPan", pan);
       sessionStorage.setItem("repaymentApplicationId", result.data?.applicationId || "");
+      if (result.data?.mobile) {
+        sessionStorage.setItem("repaymentMobile", result.data.mobile);
+      }
+      if (isRealLoanId(result.data?.loanId)) {
+        sessionStorage.setItem("repaymentLoanId", result.data.loanId);
+      } else {
+        sessionStorage.removeItem("repaymentLoanId");
+      }
       sessionStorage.setItem("repaymentAccessToken", result.data?.repaymentAccessToken || "");
       setMessage("OTP verified successfully. Our repayment team will help you proceed securely.");
-      navigate("/repayment/make-payment");
+      if (result.data?.mobile) {
+        navigate(`/repayment/make-payment?mobile=${encodeURIComponent(result.data.mobile)}`);
+      } else if (isRealLoanId(result.data?.loanId)) {
+        navigate(`/repayment/make-payment?loan_id=${encodeURIComponent(result.data.loanId)}`);
+      } else {
+        setError("Registered mobile number was not received. Please try again.");
+      }
     } catch (fetchError) {
       console.error("Repayment OTP verification error:", fetchError);
       setError("Server not reachable");
@@ -349,7 +378,7 @@ const Repayment = () => {
                 className="mt-3 h-14 w-full rounded-xl border border-purple-100 bg-white px-4 text-base font-black uppercase tracking-[0.22em] text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-purple-600 focus:ring-4 focus:ring-purple-50"
               />
               <p className="mt-3 text-sm text-slate-500 sm:text-base">
-                Login using your PAN to receive OTP.
+                Enter PAN to receive OTP on your registered mobile. Repayment details are fetched from CRM using that mobile number.
               </p>
             </div>
 
@@ -380,14 +409,16 @@ const Repayment = () => {
               </p>
             )}
 
-            <button
-              type="submit"
-              disabled={sendingOtp}
-              className="mt-7 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-purple-600 text-base font-black text-white shadow-lg shadow-purple-100 transition hover:bg-purple-700"
-            >
-              {sendingOtp ? "Sending..." : otpRequested && secondsLeft > 0 ? "Open OTP Popup" : otpRequested ? "Send OTP Again" : "Get OTP"}
-              <ArrowRight className="h-5 w-5" />
-            </button>
+            {!REPAYMENT_OTP_DISABLED && (
+              <button
+                type="submit"
+                disabled={sendingOtp}
+                className="mt-7 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-purple-600 text-base font-black text-white shadow-lg shadow-purple-100 transition hover:bg-purple-700"
+              >
+                {sendingOtp ? "Sending..." : otpRequested && secondsLeft > 0 ? "Open OTP Popup" : otpRequested ? "Send OTP Again" : "Get OTP"}
+                <ArrowRight className="h-5 w-5" />
+              </button>
+            )}
 
             <p className="mt-6 text-center text-sm leading-6 text-slate-500">
               By proceeding, you agree to our terms and privacy policy.
@@ -456,7 +487,7 @@ const Repayment = () => {
                   <button
                     type="button"
                     onClick={() => handleGetOtp()}
-                    disabled={sendingOtp || secondsLeft > 0}
+                    disabled={REPAYMENT_OTP_DISABLED || sendingOtp || secondsLeft > 0}
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-purple-100 bg-white px-4 text-sm font-black text-purple-700 transition hover:bg-purple-50 disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-400"
                   >
                     <RefreshCw className="h-4 w-4" />
@@ -578,7 +609,7 @@ const Repayment = () => {
                     onChange={(event) => setModalAcknowledged(event.target.checked)}
                     className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 accent-purple-700"
                   />
-                  <span>I have read the Security Alert / Maine suraksha chetavani padh li hai</span>
+                  <span>I have read the Security Alert / मैंने सुरक्षा चेतावनी पढ़ ली है</span>
                 </label>
                 <button
                   type="button"
@@ -661,7 +692,7 @@ const Repayment = () => {
               </div>
             </div>
             <Link
-              to="/Contact"
+              to="/contact"
               className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-purple-600 px-6 text-sm font-bold text-white transition hover:bg-purple-700"
             >
               Contact Support

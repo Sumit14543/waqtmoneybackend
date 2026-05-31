@@ -5,7 +5,7 @@ import Footer from "@/Components/Footer";
 import { useNavigate } from "react-router-dom";
 import UserProgress from "./UserProgress";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 const salaryDates = Array.from({ length: 31 }, (_, index) => index + 1);
 
@@ -24,6 +24,8 @@ const CompanyDetails = () => {
   const [errors, setErrors] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [uanNumber, setUanNumber] = useState("");
+  const [uanLoading, setUanLoading] = useState(false);
 
   const navigate = useNavigate();
 
@@ -35,6 +37,8 @@ const CompanyDetails = () => {
 
     sessionStorage.setItem("applicationId", applicationId);
     setFetching(true);
+    setUanLoading(true);
+    setUanNumber("");
 
     fetch(`${API_BASE_URL}/application/${applicationId}`)
       .then(async (response) => {
@@ -66,6 +70,26 @@ const CompanyDetails = () => {
       })
       .finally(() => {
         setFetching(false);
+      });
+
+    fetch(`${API_BASE_URL}/application/uan/${applicationId}`)
+      .then(async (response) => {
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(result.message || "Failed to load UAN number");
+        }
+
+        return result;
+      })
+      .then((result) => {
+        setUanNumber(result.uan_number || result.uanNumber || "");
+      })
+      .catch((error) => {
+        console.error("UAN load error:", error);
+      })
+      .finally(() => {
+        setUanLoading(false);
       });
   }, []);
 
@@ -201,6 +225,17 @@ const CompanyDetails = () => {
               <p className="mb-5 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-center text-sm font-medium text-red-600">
                 {errors.submit}
               </p>
+            )}
+
+            {uanNumber && !uanLoading && (
+              <div className="mb-4">
+                <label className="text-sm font-bold text-[#071d3a]">UAN Number</label>
+                <input
+                  value={uanNumber}
+                  readOnly
+                  className={`${inputClass} bg-[#f8fafc] text-[#52657d]`}
+                />
+              </div>
             )}
 
             {/* Company */}

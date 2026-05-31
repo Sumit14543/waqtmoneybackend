@@ -5,7 +5,7 @@ import Footer from "@/Components/Footer";
 import { useNavigate } from "react-router-dom";
 import UserProgress from "./UserProgress";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
 const BankDetails = () => {

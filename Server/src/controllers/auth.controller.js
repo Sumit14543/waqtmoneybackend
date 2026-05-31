@@ -1,12 +1,71 @@
 import db from "../configs/db.js";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
-import { getJwtSecret } from "../configs/secrets.js";
-import { createSanctionLetterPdf } from "../services/sanctionLetter.service.js";
+import { getAppSecret, getJwtSecret } from "../configs/secrets.js";
+import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
+import { fetchCrmRepaymentDetails } from "../services/repayment.service.js";
 
 const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(0, 10);
 const APPLICATION_TABLE = "waqt_money_loan_applications";
+const CRM_STATUS_API_URL = "https://payday-api.waqtmoney.com/api/integrations/leads/status";
 let usersTableReady = false;
+
+const ensureDashboardApplicationColumns = async () => {
+  const columns = [
+    ["status", "VARCHAR(50) NULL"],
+    ["repayment_status", "VARCHAR(50) NULL"],
+    ["repayment_paid_amount", "DECIMAL(12,2) DEFAULT 0"],
+    ["repayment_last_order_id", "VARCHAR(120) NULL"],
+    ["repayment_last_paid_at", "DATETIME NULL"],
+    ["lead_visible", "TINYINT(1) DEFAULT 0"],
+    ["completed_at", "DATETIME NULL"],
+  ];
+  const [existingColumns] = await db.query(
+    `SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?`,
+    [APPLICATION_TABLE]
+  );
+  const existingColumnsByName = new Map(
+    existingColumns.map((column) => [column.COLUMN_NAME, column])
+  );
+
+  for (const [name, definition] of columns) {
+    const existingColumn = existingColumnsByName.get(name);
+
+    if (!existingColumn) {
+      await db.query(`ALTER TABLE ${APPLICATION_TABLE} ADD COLUMN ${name} ${definition}`);
+      continue;
+    }
+
+    const shouldWidenTextColumn =
+      ["status", "repayment_status", "repayment_last_order_id"].includes(name) &&
+      (String(existingColumn.DATA_TYPE).toLowerCase() !== "varchar" ||
+        Number(existingColumn.CHARACTER_MAXIMUM_LENGTH || 0) < Number(definition.match(/\((\d+)\)/)?.[1] || 0));
+
+    if (shouldWidenTextColumn) {
+      await db.query(`ALTER TABLE ${APPLICATION_TABLE} MODIFY COLUMN ${name} ${definition}`);
+    }
+  }
+};
+
+const buildApplicationLookup = (value) => {
+  const lookupValue = String(value || "").trim();
+
+  if (/^\d+$/.test(lookupValue)) {
+    return {
+      clause: "(application_id = ? OR id = ?)",
+      values: [lookupValue, Number(lookupValue)],
+    };
+  }
+
+  return {
+    clause: "application_id = ?",
+    values: [lookupValue],
+  };
+};
 
 const createToken = (user) =>
   jwt.sign(
@@ -14,6 +73,27 @@ const createToken = (user) =>
     getJwtSecret(),
     { expiresIn: "7d" }
   );
+
+const encodeBase64Url = (value) => Buffer.from(value).toString("base64url");
+
+const signRepaymentAccessPayload = (payload) =>
+  crypto
+    .createHmac("sha256", getAppSecret())
+    .update(payload)
+    .digest("base64url");
+
+const createRepaymentAccessToken = ({ applicationId, loanId = "" }) => {
+  const payload = encodeBase64Url(JSON.stringify({
+    pan: "",
+    applicationId: String(applicationId || ""),
+    loanId: String(loanId || ""),
+    purpose: "repayment",
+    expires: Date.now() + 15 * 60 * 1000,
+  }));
+  const signature = signRepaymentAccessPayload(payload);
+
+  return `${payload}.${signature}`;
+};
 
 const ensureUsersTable = async () => {
   if (!usersTableReady) {
@@ -73,22 +153,370 @@ const getAuthenticatedUser = async (req) => {
   }
 };
 
-const formatLoanStatus = (application) => {
-  const status = String(application.status || "").trim().toLowerCase();
-  const currentStep = String(application.current_step || "").trim().toLowerCase();
+const findLatestApplicationByMobile = async (mobile) => {
+  const [applications] = await db.query(
+    `SELECT full_name, email, mobile
+     FROM ${APPLICATION_TABLE}
+     WHERE mobile = ? OR mobile = ? OR mobile = ?
+     ORDER BY last_activity_at DESC, id DESC
+     LIMIT 1`,
+    [mobile, `91${mobile}`, `+91${mobile}`]
+  );
 
-  if (["closed", "paid", "completed"].includes(status)) return "Closed";
-  if (["rejected", "failed", "cancelled"].includes(status)) return "Rejected";
-  if (status === "approved" || currentStep === "loan_status") return "Active";
-  if (currentStep.includes("kyc") || currentStep.includes("verify")) return "Under Review";
-  return status ? status.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "In Progress";
+  return applications[0] || null;
 };
 
-const calculateRepaymentAmount = (application) => {
-  const amount = Number(application.loan_amount || 0);
-  if (!Number.isFinite(amount) || amount <= 0) return 0;
+const findOrCreateOtpUser = async (mobile) => {
+  await ensureUsersTable();
 
-  return Math.round(amount * 1.27);
+  const [existingUsers] = await db.query(
+    "SELECT id, name, email, mobile FROM users WHERE mobile=? ORDER BY id DESC LIMIT 1",
+    [mobile]
+  );
+
+  if (existingUsers.length > 0) {
+    return existingUsers[0];
+  }
+
+  const application = await findLatestApplicationByMobile(mobile);
+  const name = String(application?.full_name || "").trim() || "Customer";
+  const email = String(application?.email || "").trim() || null;
+  const randomPassword = await bcrypt.hash(`otp-login-${mobile}-${Date.now()}-${Math.random()}`, 10);
+  const [result] = await db.query(
+    "INSERT INTO users (name, email, mobile, password) VALUES (?, ?, ?, ?)",
+    [name, email, mobile, randomPassword]
+  );
+
+  return {
+    id: result.insertId,
+    name,
+    email,
+    mobile,
+  };
+};
+
+const formatStepLabel = (step) => {
+  const currentStep = String(step || "").trim().toLowerCase();
+  const labels = {
+    basic_details: "Basic Details",
+    loan_requirement: "Loan Requirement",
+    pan_verify: "PAN Verification",
+    aadhaar_verify: "Aadhaar Verification",
+    aadhaar_callback: "Aadhaar Verification",
+    react_aadhaar_verify: "Aadhaar Verification",
+    react_aadhaar_callback: "Aadhaar Verification",
+    work_details: "Work Details",
+    bank_details: "Bank Details",
+    references: "References",
+    upload_docs: "Documents Upload",
+    documents_uploaded: "Documents Uploaded",
+    video_kyc_completed: "Application Submitted",
+    loan_status: "Approved",
+    loan_closed: "Closed",
+  };
+
+  return labels[currentStep] || (currentStep ? currentStep.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Started");
+};
+
+const formatLoanStatus = (application) => {
+  const status = String(application.status || "").trim().toLowerCase();
+  const repaymentStatus = String(application.repayment_status || "").trim().toLowerCase();
+
+  if (["closed", "paid", "completed"].includes(status) || repaymentStatus === "paid") return "Closed";
+  if (repaymentStatus === "partial_paid") return "Partially Paid";
+  if (["rejected", "failed", "cancelled"].includes(status)) return "Rejected";
+  if (status === "approved") return "Approved";
+  if (status) return status.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+  return formatStepLabel(application.current_step);
+};
+
+const toFiniteNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+};
+
+const firstPositiveNumber = (...values) => {
+  for (const value of values) {
+    const number = toFiniteNumber(value);
+    if (number > 0) return number;
+  }
+
+  return 0;
+};
+
+const getCrmRepaymentOutstanding = (crmStatus = {}) => {
+  const repayment = crmStatus.repayment || {};
+  const directOutstanding = firstPositiveNumber(
+    repayment.outstanding,
+    repayment.outstandingAmount,
+    repayment.outstanding_amount,
+    repayment.balanceAmount,
+    repayment.balance_amount,
+    repayment.dueAmount,
+    repayment.due_amount,
+    repayment.totalDue,
+    repayment.total_due
+  );
+
+  if (directOutstanding > 0) return directOutstanding;
+
+  const totalDue = toFiniteNumber(repayment.totalDue || repayment.total_due);
+  const paidAmount = toFiniteNumber(
+    repayment.amountPaid || repayment.amount_paid || repayment.paidAmount || repayment.paid_amount
+  );
+
+  return Math.max(0, Number((totalDue - paidAmount).toFixed(2)));
+};
+
+const getIntegrationApiKey = () =>
+  process.env.INTEGRATION_API_KEYS ||
+  process.env.INTEGRATION_API_KEY ||
+  process.env.CRM_INTEGRATION_API_KEY ||
+  "";
+
+const fetchCrmLeadStatusBySourceId = async (sourceId) => {
+  const apiKey = getIntegrationApiKey();
+  if (!apiKey) {
+    const error = new Error("CRM status API key is not configured");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const url = new URL(CRM_STATUS_API_URL);
+  url.searchParams.set("sourceSystem", "waqtmoney");
+  url.searchParams.set("sourceLeadId", sourceId);
+  url.searchParams.set("sourceApplicationId", sourceId);
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || !data.success) {
+    const error = new Error(data.message || "Unable to fetch CRM status");
+    error.statusCode = response.status;
+    throw error;
+  }
+
+  return data.data || null;
+};
+
+const normalizeCrmStatusList = (data) => {
+  if (!data) return [];
+  if (Array.isArray(data)) return data.filter(Boolean);
+  if (Array.isArray(data.leads)) return data.leads.filter(Boolean);
+  if (Array.isArray(data.statuses)) return data.statuses.filter(Boolean);
+  if (Array.isArray(data.items)) return data.items.filter(Boolean);
+  if (Array.isArray(data.data)) return data.data.filter(Boolean);
+  return [data];
+};
+
+const getCrmDisbursalDate = (crmStatus = {}) =>
+  crmStatus.disbursement?.disbursedAt ||
+  crmStatus.disbursement?.disbursalDate ||
+  crmStatus.disbursement?.disbursementDate ||
+  crmStatus.sanction?.disbursedAt ||
+  crmStatus.sanction?.disbursalDate ||
+  crmStatus.sanction?.disbursementDate ||
+  crmStatus.disbursedAt ||
+  crmStatus.disbursalDate ||
+  crmStatus.disbursementDate ||
+  "";
+
+const getCrmSanctionPdfUrl = (crmStatus = {}, loanId = "") => {
+  const sourceLeadId = crmStatus.sourceLeadId || crmStatus.sourceApplicationId || loanId;
+  const rawUrl =
+    crmStatus.sanction?.pdfUrl ||
+    (sourceLeadId
+      ? `https://payday-api.waqtmoney.com/api/integrations/leads/sanction-pdf?sourceSystem=waqtmoney&sourceLeadId=${encodeURIComponent(sourceLeadId)}`
+      : "");
+
+  const pdfUrl = String(rawUrl || "");
+  if (pdfUrl.startsWith("/api/integrations/")) {
+    return `https://payday-api.waqtmoney.com${pdfUrl}`;
+  }
+
+  return pdfUrl.replace(
+    /^https:\/\/(?:www\.)?waqtmoney\.com\/api\/integrations\//i,
+    "https://payday-api.waqtmoney.com/api/integrations/"
+  );
+};
+
+const fetchCrmSanctionPdf = async (crmStatus, loanId) => {
+  const apiKey = getIntegrationApiKey();
+  const pdfUrl = getCrmSanctionPdfUrl(crmStatus, loanId);
+  if (!apiKey || !pdfUrl) return null;
+
+  const response = await fetch(pdfUrl, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+  const contentType = String(response.headers.get("content-type") || "");
+
+  if (!response.ok || !contentType.toLowerCase().includes("application/pdf")) {
+    return null;
+  }
+
+  return Buffer.from(await response.arrayBuffer());
+};
+
+const fetchCrmLeadStatusesByMobile = async (mobile) => {
+  const apiKey = getIntegrationApiKey();
+  if (!apiKey || !mobile) return [];
+
+  const url = new URL(CRM_STATUS_API_URL);
+  url.searchParams.set("sourceSystem", "waqtmoney");
+  url.searchParams.set("mobile", mobile);
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || !data.success) {
+    const error = new Error(data.message || "Unable to fetch CRM status by mobile");
+    error.statusCode = response.status;
+    throw error;
+  }
+
+  return normalizeCrmStatusList(data.data);
+};
+
+const fetchCrmLeadStatus = async (sourceIds) => {
+  const candidates = [...new Set(sourceIds.map((value) => String(value || "").trim()).filter(Boolean))];
+  let lastError;
+
+  for (const sourceId of candidates) {
+    try {
+      return await fetchCrmLeadStatusBySourceId(sourceId);
+    } catch (error) {
+      lastError = error;
+      if (![404, 400].includes(Number(error.statusCode))) {
+        throw error;
+      }
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
+};
+
+const parseSourcePayload = (value) => {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return {};
+  }
+};
+
+const getCrmCandidateIds = (application = {}) => {
+  const sourcePayload = parseSourcePayload(application.source_payload);
+
+  return [
+    application.source_lead_id,
+    application.source_application_id,
+    application.external_application_id,
+    sourcePayload.sourceLeadId,
+    sourcePayload.source_lead_id,
+    sourcePayload.sourceApplicationId,
+    sourcePayload.source_application_id,
+    sourcePayload.application_id,
+    application.application_id,
+    application.id,
+  ];
+};
+
+const getCrmRepaymentLookupIds = (loan = {}, crmStatus = {}) => {
+  const sanction = crmStatus?.sanction || {};
+  const repayment = crmStatus?.repayment || {};
+  const disbursement = crmStatus?.disbursement || {};
+
+  return [
+    repayment.loanId,
+    repayment.loan_id,
+    disbursement.loanId,
+    disbursement.loan_id,
+    sanction.loanId,
+    sanction.loan_id,
+    crmStatus?.loanId,
+    crmStatus?.loan_id,
+    crmStatus?.sourceLeadId,
+    crmStatus?.sourceApplicationId,
+    crmStatus?.applicationId,
+    loan.application_id,
+    loan.source_lead_id,
+    loan.source_application_id,
+    loan.external_application_id,
+    loan.id,
+  ];
+};
+
+const fetchDashboardCrmRepaymentDetails = async (loan = {}, crmStatus = null) => {
+  const lookupIds = [...new Set(getCrmRepaymentLookupIds(loan, crmStatus || {}).map((value) => String(value || "").trim()).filter(Boolean))];
+
+  for (const lookupId of lookupIds) {
+    const details = await fetchCrmRepaymentDetails(lookupId).catch(() => null);
+    if (details) return details;
+  }
+
+  const mobile = normalizeMobile(crmStatus?.phone || loan.mobile);
+  if (/^[6-9]\d{9}$/.test(mobile)) {
+    return fetchCrmRepaymentDetails(mobile).catch(() => null);
+  }
+
+  return null;
+};
+
+const toDashboardLoan = (loan, crmStatus = null, crmRepaymentDetails = null) => {
+  const crmLoanAmount = Number(crmStatus?.loanAmount || 0);
+  const crmRepaymentLoanAmount = Number(crmRepaymentDetails?.loan_amount || 0);
+  const localLoanAmount = Number(loan.loan_amount || 0);
+  const amount = firstPositiveNumber(crmRepaymentLoanAmount, crmLoanAmount, localLoanAmount);
+  const sanction = crmStatus?.sanction || {};
+  const crmOutstandingAmount = firstPositiveNumber(
+    crmRepaymentDetails?.outstanding_amount,
+    getCrmRepaymentOutstanding(crmStatus || {}),
+    crmRepaymentDetails?.maturity_amount
+  );
+  const repaymentAmount = Math.round(crmOutstandingAmount);
+
+  const applicationId =
+    crmStatus?.sourceLeadId ||
+    crmStatus?.sourceApplicationId ||
+    loan.application_id ||
+    `WAQTMN-${loan.id}`;
+  const loanId =
+    crmStatus?.loanId ||
+    crmStatus?.loan_id ||
+    sanction.loanId ||
+    sanction.loan_id ||
+    sanction.agreementNumber ||
+    "";
+
+  return {
+    id: applicationId,
+    loanId,
+    mobile: normalizeMobile(crmStatus?.phone || loan.mobile),
+    crmApplicationId: crmStatus?.applicationId || "",
+    crmLeadId: crmStatus?.crmLeadId || "",
+    status: crmStatus?.publicStatus || crmStatus?.crmStatus || formatLoanStatus(loan),
+    currentStep: crmStatus?.statusTitle || crmStatus?.currentStage || formatStepLabel(loan.current_step),
+    amount: Number.isFinite(amount) ? amount : 0,
+    repaymentAmount,
+    paidAmount: firstPositiveNumber(crmRepaymentDetails?.repayment_paid_amount, crmStatus?.repayment?.paidAmount, crmStatus?.repayment?.paid_amount),
+    disbursalDate: getCrmDisbursalDate(crmStatus) || loan.disbursal_date || loan.submit_at || loan.created_at || loan.updated_at,
+    repaymentAccessToken: createRepaymentAccessToken({ applicationId }),
+    crmStatus,
+  };
 };
 
 export const signup = async (req, res) => {
@@ -171,6 +599,73 @@ export const login = async (req, res) => {
   }
 };
 
+export const sendLoginOtp = async (req, res, next) => {
+  try {
+    const mobile = normalizeMobile(req.body.mobile || req.body.phone);
+
+    if (!/^[6-9]\d{9}$/.test(mobile)) {
+      return res.status(400).json({
+        success: false,
+        message: "Enter a valid 10-digit mobile number",
+      });
+    }
+
+    const result = await sendOTPService({ phone: mobile });
+    return res.status(200).json({
+      success: true,
+      message: "OTP sent",
+      data: result,
+    });
+  } catch (err) {
+    if (err.statusCode === 429) {
+      return res.status(429).json({ success: false, message: err.message });
+    }
+    if (err.details) {
+      return res.status(err.statusCode || 500).json({
+        success: false,
+        message: err.message,
+        details: err.details,
+      });
+    }
+    return next(err);
+  }
+};
+
+export const verifyLoginOtp = async (req, res) => {
+  try {
+    const mobile = normalizeMobile(req.body.mobile || req.body.phone);
+    const otp = String(req.body.otp || "").trim();
+
+    if (!/^[6-9]\d{9}$/.test(mobile) || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Mobile number and OTP are required",
+      });
+    }
+
+    const otpResult = verifyOTPService({ phone: mobile, otp });
+
+    if (otpResult === "expired") {
+      return res.status(400).json({ success: false, message: "OTP Expired" });
+    }
+
+    if (otpResult !== true) {
+      return res.status(400).json({ success: false, message: "Invalid OTP" });
+    }
+
+    const user = await findOrCreateOtpUser(mobile);
+
+    return res.json({
+      success: true,
+      message: "Login success",
+      token: createToken(user),
+      user,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 export const dashboard = async (req, res) => {
   try {
     await ensureUsersTable();
@@ -184,13 +679,38 @@ export const dashboard = async (req, res) => {
       return res.status(401).json({ message: "Session expired. Please login again" });
     }
 
+    await ensureDashboardApplicationColumns();
+
     const [loans] = await db.query(
-      `SELECT id, application_id, loan_amount, status, current_step, submit_at, created_at, updated_at
+      `SELECT *
        FROM ${APPLICATION_TABLE}
-       WHERE mobile = ? OR mobile = ? OR mobile = ?
+       WHERE (mobile = ? OR mobile = ? OR mobile = ?)
+         AND (lead_visible = 1 OR current_step = 'video_kyc_completed')
        ORDER BY last_activity_at DESC, id DESC`,
       [user.mobile, `91${user.mobile}`, `+91${user.mobile}`]
     );
+
+    const crmLoansByMobile = await fetchCrmLeadStatusesByMobile(user.mobile).catch(() => []);
+    const formattedLoans = crmLoansByMobile.length
+      ? await Promise.all(
+        crmLoansByMobile.map(async (crmStatus) => {
+          const crmRepaymentDetails = await fetchDashboardCrmRepaymentDetails({}, crmStatus);
+          return toDashboardLoan({}, crmStatus, crmRepaymentDetails);
+        })
+      )
+      : (
+        await Promise.all(
+          loans.map(async (loan) => {
+            const crmStatus = await fetchCrmLeadStatus(getCrmCandidateIds(loan)).catch(() => null);
+            if (!crmStatus) return null;
+
+            const crmRepaymentDetails = await fetchDashboardCrmRepaymentDetails(loan, crmStatus);
+            return toDashboardLoan(loan, crmStatus, crmRepaymentDetails);
+          })
+        )
+      ).filter(Boolean);
+    const latestLoan = formattedLoans[0] || null;
+    const latestCrmStatus = latestLoan?.crmStatus || null;
 
     res.json({
       success: true,
@@ -198,20 +718,15 @@ export const dashboard = async (req, res) => {
       data: {
         user,
         credit: {
-          score: null,
-          label: loans.length > 0 ? "In Review" : "New",
+          score: latestCrmStatus?.cibilScore ?? null,
+          label: "",
           message:
-            loans.length > 0
-              ? "Keep repayments on time to improve future eligibility."
-              : "Start your first application to build your Waqt Money profile.",
+            latestCrmStatus?.statusDescription ||
+            (latestLoan
+              ? "Your application is under process."
+              : "Start an application and it will appear here automatically."),
         },
-        loans: loans.map((loan) => ({
-          id: loan.application_id || `WAQTMN-${loan.id}`,
-          status: formatLoanStatus(loan),
-          amount: Number(loan.loan_amount || 0),
-          repaymentAmount: calculateRepaymentAmount(loan),
-          disbursalDate: loan.submit_at || loan.created_at || loan.updated_at,
-        })),
+        loans: formattedLoans,
       },
     });
   } catch (err) {
@@ -237,28 +752,90 @@ export const downloadSanctionLetter = async (req, res) => {
       return res.status(400).json({ message: "Loan ID is required" });
     }
 
+    const lookup = buildApplicationLookup(loanId);
     const [applications] = await db.query(
       `SELECT *
        FROM ${APPLICATION_TABLE}
-       WHERE (application_id = ? OR id = ?)
+       WHERE ${lookup.clause}
          AND (mobile = ? OR mobile = ? OR mobile = ?)
        LIMIT 1`,
-      [loanId, loanId, user.mobile, `91${user.mobile}`, `+91${user.mobile}`]
+      [...lookup.values, user.mobile, `91${user.mobile}`, `+91${user.mobile}`]
     );
 
     const application = applications[0];
-    if (!application) {
+    const crmStatus = await fetchCrmLeadStatus(
+      application ? getCrmCandidateIds(application) : [loanId]
+    ).catch(() => null);
+    const crmPhone = normalizeMobile(crmStatus?.phone);
+
+    if (crmStatus && (!crmPhone || crmPhone === user.mobile)) {
+      const crmPdf = await fetchCrmSanctionPdf(crmStatus, loanId).catch(() => null);
+
+      if (crmPdf) {
+        const filename = `WaqtMoney-Sanction-Letter-${crmStatus.sourceLeadId || crmStatus.applicationId || loanId}.pdf`;
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        res.setHeader("Content-Length", crmPdf.length);
+        return res.send(crmPdf);
+      }
+    }
+
+    return res.status(404).json({ message: "CRM sanction letter is not available" });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+export const crmLeadStatus = async (req, res) => {
+  try {
+    await ensureUsersTable();
+
+    if (!getBearerToken(req)) {
+      return res.status(401).json({ message: "Please login again" });
+    }
+
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return res.status(401).json({ message: "Session expired. Please login again" });
+    }
+
+    const loanId = String(req.params.loanId || "").trim();
+    if (!loanId) {
+      return res.status(400).json({ message: "Loan ID is required" });
+    }
+
+    const lookup = buildApplicationLookup(loanId);
+    const [applications] = await db.query(
+      `SELECT *
+       FROM ${APPLICATION_TABLE}
+       WHERE ${lookup.clause}
+         AND (mobile = ? OR mobile = ? OR mobile = ?)
+       LIMIT 1`,
+      [...lookup.values, user.mobile, `91${user.mobile}`, `+91${user.mobile}`]
+    );
+
+    if (!applications[0]) {
       return res.status(404).json({ message: "Loan application not found" });
     }
 
-    const pdf = createSanctionLetterPdf({ application, user });
-    const filename = `WaqtMoney-Sanction-Letter-${application.application_id || application.id}.pdf`;
+    const application = applications[0];
+    const crmStatus = await fetchCrmLeadStatus([
+      loanId,
+      application.application_id,
+      application.source_lead_id,
+      application.source_application_id,
+      application.external_application_id,
+      application.id,
+    ]);
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.setHeader("Content-Length", pdf.length);
-    return res.send(pdf);
+    return res.json({
+      success: true,
+      data: crmStatus,
+    });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(err.statusCode || 500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };

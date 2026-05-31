@@ -17,7 +17,14 @@ const isProduction = process.env.NODE_ENV === "production";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadDir = path.resolve(__dirname, "../uploads");
+const defaultProductionOrigins = [
+  "https://waqtmoney.com",
+  "https://www.waqtmoney.com",
+  "http://waqt-testing.waqtmoney.com",
+  "https://waqt-testing.waqtmoney.com",
+];
 const configuredOrigins = [
+  ...defaultProductionOrigins,
   process.env.CLIENT_BASE_URL,
   process.env.ADMIN_BASE_URL,
   ...(process.env.CORS_ORIGINS || "").split(","),
@@ -25,24 +32,80 @@ const configuredOrigins = [
   .map((origin) => origin?.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
-const localOrigins = [
-  "http://localhost:8080",
-  "http://127.0.0.1:8080",
-];
+const localOrigins = ["http://localhost:8080", "http://127.0.0.1:8080"];
 
 if (process.env.ALLOW_LOCAL_CORS !== "false") {
-  configuredOrigins.push(
-    ...localOrigins,
-  );
+  configuredOrigins.push(...localOrigins);
 }
 
 const allowedOrigins = [...new Set(configuredOrigins)];
+const isAllowedCorsOrigin = (origin) => {
+  const normalizedOrigin = String(origin || "").trim().replace(/\/$/, "");
+  if (!normalizedOrigin) return true;
+  if (allowedOrigins.includes(normalizedOrigin)) return true;
+
+  return /^https?:\/\/(?:[a-z0-9-]+\.)?waqtmoney\.com$/i.test(normalizedOrigin);
+};
+
+const applyCorsHeaders = (req, res) => {
+  const origin = String(req.headers.origin || "").trim().replace(/\/$/, "");
+  if (!isAllowedCorsOrigin(origin)) return false;
+
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Repayment-Access-Token",
+  );
+
+  return true;
+};
+const corsOptions = {
+  optionsSuccessStatus: 204,
+  origin(origin, callback) {
+    if (isAllowedCorsOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    logger.warn(`CORS blocked origin: ${origin}`);
+    const error = new Error(`CORS policy does not allow access from ${origin}`);
+    error.statusCode = 403;
+    callback(error);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Origin",
+    "X-Requested-With",
+    "Content-Type",
+    "Accept",
+    "Authorization",
+    "X-Repayment-Access-Token",
+  ],
+};
 
 logger.info("Allowed Origins:", allowedOrigins);
 
 app.disable("x-powered-by");
 
 app.use((req, res, next) => {
+  const corsApplied = applyCorsHeaders(req, res);
+
+  if (req.method === "OPTIONS") {
+    if (!corsApplied) {
+      logger.warn(`CORS blocked origin: ${req.headers.origin || "unknown"}`);
+      return res.sendStatus(403);
+    }
+
+    return res.sendStatus(204);
+  }
+
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
@@ -54,31 +117,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(
-  cors({
-    optionsSuccessStatus: 204,
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ""))) {
-        callback(null, true);
-        return;
-      }
-
-      const error = new Error(`CORS policy does not allow access from ${origin}`);
-      error.statusCode = 403;
-      callback(error);
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Origin",
-      "X-Requested-With",
-      "Content-Type",
-      "Accept",
-      "Authorization",
-      "X-Repayment-Access-Token",
-    ],
-  }),
-);
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 app.use("/uploads", express.static(uploadDir));

@@ -2,6 +2,22 @@ import db from "../configs/db.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
 
+const buildApplicationLookup = (value) => {
+  const lookupValue = String(value || "").trim();
+
+  if (/^\d+$/.test(lookupValue)) {
+    return {
+      clause: "(id = ? OR application_id = ?)",
+      values: [Number(lookupValue), lookupValue],
+    };
+  }
+
+  return {
+    clause: "application_id = ?",
+    values: [lookupValue],
+  };
+};
+
 const ensureLoanApplicationTable = async () => {
   await db.execute(
     `CREATE TABLE IF NOT EXISTS ${APPLICATION_TABLE} (
@@ -46,11 +62,12 @@ export const createLoan = async (data) => {
   const { id, amount, purpose, hasLoan } = data;
 
   if (id) {
+    const lookup = buildApplicationLookup(id);
     const [result] = await db.execute(
       `UPDATE ${APPLICATION_TABLE}
        SET loan_amount = ?, loan_purpose = ?, has_running_loan = ?, current_step = 'loan_requirement', last_activity_at = NOW()
-       WHERE id = ? OR application_id = ?`,
-      [amount, purpose, hasLoan === "yes" || hasLoan === true ? 1 : 0, id, id]
+       WHERE ${lookup.clause}`,
+      [amount, purpose, hasLoan === "yes" || hasLoan === true ? 1 : 0, ...lookup.values]
     );
 
     if (result.affectedRows === 0) {

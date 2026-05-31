@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 Server/node_modules/
+.pnp/
+.pnp.*
 
 # Build output
 dist/
@@ -8,8 +10,10 @@ dist-ssr/
 build/
 Server/dist/
 *.tsbuildinfo
+.vite/
+Server/.vite/
 
-# Environment files
+# Environment files and secrets
 .env
 .env.*
 !.env.example
@@ -19,6 +23,29 @@ Server/.env.*
 *.local
 !.env.*.example
 !Server/.env.*.example
+
+# Keys, certificates, and credentials
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+service-account*.json
+*-service-account.json
+credentials.json
+client_secret*.json
+.aws/
+.azure/
+.gcloud/
+.firebase/
+firebase-debug.log*
 
 # Logs
 logs/
@@ -32,10 +59,14 @@ lerna-debug.log*
 # Runtime/generated backend files
 Server/uploads/
 Server/cache/
+Server/tmp/
+Server/temp/
 uploads/
 cache/
+tmp/
+temp/
 
-# Archives and generated documents
+# Archives, dumps, and generated documents
 deploy_packages/
 *.zip
 *.tar
@@ -46,14 +77,28 @@ deploy_packages/
 tmp-*
 *.tmp
 *.temp
+*.bak
+*.backup
+*.dump
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+*.csv
+xlsx/
+reports/
+exports/
 
 # Test and coverage
 coverage/
 .nyc_output/
+playwright-report/
+test-results/
 
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Editor directories and files
 .vscode/*
@@ -64,3 +109,12 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Package manager caches
+.npm/
+.yarn/*
+!.yarn/releases/
+!.yarn/plugins/
+!.yarn/sdks/
+!.yarn/versions/
+.pnpm-store/

@@ -22,8 +22,34 @@ const poolConfig = {
 
 const localDbHosts = new Set(["localhost", "127.0.0.1", "::1"]);
 
-if (!poolConfig.host || !poolConfig.user || !poolConfig.database || Number.isNaN(poolConfig.port)) {
-  throw new Error("Invalid database configuration. Check DB_HOST, DB_PORT, DB_USER, and DB_NAME.");
+const formatDbError = (error) => {
+  if (error instanceof Error && error.message) {
+    const details = [
+      error.code && `code=${error.code}`,
+      error.errno && `errno=${error.errno}`,
+      error.sqlState && `sqlState=${error.sqlState}`,
+      error.sqlMessage && `sqlMessage=${error.sqlMessage}`,
+    ].filter(Boolean);
+
+    return details.length > 0 ? `${error.message} (${details.join(", ")})` : error.message;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
+
+if (
+  !poolConfig.host ||
+  !poolConfig.user ||
+  !poolConfig.database ||
+  Number.isNaN(poolConfig.port)
+) {
+  throw new Error(
+    "Invalid database configuration. Check DB_HOST, DB_PORT, DB_USER, and DB_NAME.",
+  );
 }
 
 if (
@@ -45,10 +71,12 @@ const db = mysql.createPool(poolConfig);
 (async () => {
   try {
     const connection = await db.getConnection();
-    logger.info(`MySQL connection established: ${poolConfig.user}@${poolConfig.host}/${poolConfig.database}`);
+    logger.info(
+      `MySQL connection established: ${poolConfig.user}@${poolConfig.host}/${poolConfig.database}`,
+    );
     connection.release();
   } catch (error) {
-    logger.error("MySQL connection failed:", error.message);
+    logger.error("MySQL connection failed:", formatDbError(error));
   }
 })();
 

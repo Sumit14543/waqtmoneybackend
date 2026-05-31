@@ -5,7 +5,7 @@ import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 import UserProgress from "./UserProgress";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 type ReferenceForm = {
   reference1Name: string;

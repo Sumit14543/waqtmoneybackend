@@ -8,6 +8,7 @@ import {
   getApplicationUan,
   getIfscDetails,
   getApp,
+  getRepaymentDetails,
   getRepaymentPaymentStatus,
   sendRepaymentOtp,
   saveContactQuery,
@@ -52,6 +53,7 @@ router.post("/contact", saveContactQuery);
 router.post("/repayment/send-otp", sendRepaymentOtp);
 router.post("/repayment/verify-otp", verifyRepaymentOtp);
 router.post("/repayment/create-payment-order", createRepaymentPaymentOrder);
+router.get("/repayment/details/:id", getRepaymentDetails);
 router.get("/repayment/payment-status/:orderId", getRepaymentPaymentStatus);
 router.get("/ifsc/:ifsc", getIfscDetails);
 router.get("/uan/:id", getApplicationUan);

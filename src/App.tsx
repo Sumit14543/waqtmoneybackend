@@ -1,40 +1,50 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "./Components/ui/sonner";
 import { Toaster } from "./Components/ui/toaster";
 import { TooltipProvider } from "@/Components/ui/tooltip";
-import Index from "./pages/Index.tsx";
-import NotFound from "./pages/NotFound.tsx";
-import Services from "./pages/Services.tsx";
-import About from "./pages/About-us.tsx";
-import Faqs from "./pages/Faqs.tsx";
-import Contact from "./pages/Contact.tsx";
-import Policies from "./pages/Policies.tsx";
-import EmiCalculator from "./pages/Emi-Calculator.tsx";
-import Login from "./User/Login.tsx";
-import LoanDashboard from "./User/LoanDashboard.tsx";
-import Apply from "./User/Apply.tsx";
-import MobileOtp from "./User/MobileOtp.tsx";
-import LoanForm from "./User/LoanForm.tsx";
-import BasicDetailsForm from "./User/BasicDetailsForm.tsx";
-import PanVerification from "./User/PanVerification.tsx";
-import KycAadhaar from "./User/KycAadhaar.tsx";
-import CompanyDetails from "./User/CompanyDetails.tsx";
-import BankDetails from "./User/BankDetails.tsx";
-import References from "./User/References.tsx";
-import SalarySlip from "./User/SalarySlip.tsx";
-import CustomerVideoKYC from "./User/CustomerVideoKYC.tsx";
-import LoanStatus from "./User/LoanStatus.tsx";
-import PrivacyPolicy from "./pages/Privacy-Policies.tsx";
-import TermsConditions from "./pages/Term-Conditions.tsx";
-import GrievanceRedressal from "./pages/Grievance-Redressal.tsx";
-import FairPracticesCode from "./pages/Fair-Practices.tsx";
-import Repayment from "./pages/Repayment.tsx";
-import MakePayment from "./pages/MakePayment.tsx";
-import ReloanOffer from "./pages/ReloanOffer.tsx";
 import ScrollToTop from "./Components/ScrollToTop.tsx";
 
 const queryClient = new QueryClient();
+
+const Index = lazy(() => import("./pages/Index.tsx"));
+const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const Services = lazy(() => import("./pages/Services.tsx"));
+const About = lazy(() => import("./pages/About-us.tsx"));
+const Faqs = lazy(() => import("./pages/Faqs.tsx"));
+const Contact = lazy(() => import("./pages/Contact.tsx"));
+const Policies = lazy(() => import("./pages/Policies.tsx"));
+const EmiCalculator = lazy(() => import("./pages/Emi-Calculator.tsx"));
+const Login = lazy(() => import("./User/Login.tsx"));
+const LoanDashboard = lazy(() => import("./User/LoanDashboard.tsx"));
+const Apply = lazy(() => import("./User/Apply.tsx"));
+const MobileOtp = lazy(() => import("./User/MobileOtp.tsx"));
+const LoanForm = lazy(() => import("./User/LoanForm.tsx"));
+const BasicDetailsForm = lazy(() => import("./User/BasicDetailsForm.tsx"));
+const PanVerification = lazy(() => import("./User/PanVerification.tsx"));
+const KycAadhaar = lazy(() => import("./User/KycAadhaar.tsx"));
+const CompanyDetails = lazy(() => import("./User/CompanyDetails.tsx"));
+const BankDetails = lazy(() => import("./User/BankDetails.tsx"));
+const References = lazy(() => import("./User/References.tsx"));
+const SalarySlip = lazy(() => import("./User/SalarySlip.tsx"));
+const CustomerVideoKYC = lazy(() => import("./User/CustomerVideoKYC.tsx"));
+const LoanStatus = lazy(() => import("./User/LoanStatus.tsx"));
+const PrivacyPolicy = lazy(() => import("./pages/Privacy-Policies.tsx"));
+const TermsConditions = lazy(() => import("./pages/Term-Conditions.tsx"));
+const GrievanceRedressal = lazy(() => import("./pages/Grievance-Redressal.tsx"));
+const FairPracticesCode = lazy(() => import("./pages/Fair-Practices.tsx"));
+const Repayment = lazy(() => import("./pages/Repayment.tsx"));
+const MakePayment = lazy(() => import("./pages/MakePayment.tsx"));
+const ReloanOffer = lazy(() => import("./pages/ReloanOffer.tsx"));
+
+const PageFallback = () => (
+  <div className="min-h-screen bg-background pt-24">
+    <div className="mx-auto h-1.5 w-28 overflow-hidden rounded-full bg-slate-200">
+      <div className="h-full w-1/2 animate-pulse rounded-full bg-purple-600" />
+    </div>
+  </div>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -43,34 +53,35 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <ScrollToTop />
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/services" element={<Services/>} />
-          <Route path="/About" element={<About/>} />
-          <Route path="/Faqs" element={<Faqs/>} />
-          <Route path="/Emi-Calculator" element={<EmiCalculator />} />
-          <Route path="/Contact" element={<Contact/>} />
-          <Route path="/Policies" element={<Policies/>} />
-          <Route path="/Repayment" element={<Repayment />} />
-          <Route path="/repayment/make-payment" element={<MakePayment />} />
-          <Route path="/repayment/reloan-offer" element={<ReloanOffer />} />
-          <Route path="/policies" element={<Policies/>} />
-          <Route path="/privacy-policy" element={<Policies/>} />
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/services" element={<Services />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/faqs" element={<Faqs />} />
+            <Route path="/emi-calculator" element={<EmiCalculator />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/policies" element={<Policies />} />
+            <Route path="/repayment" element={<Repayment />} />
+            <Route path="/repayment/make-payment" element={<MakePayment />} />
+            <Route path="/repayment/reloan-offer" element={<ReloanOffer />} />
+            <Route path="/policies" element={<Policies />} />
+            <Route path="/privacy-policy" element={<Policies />} />
 
-          <Route path="/login" element={<Login />} />
-          <Route path="/user/dashboard" element={<LoanDashboard />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/user/dashboard" element={<LoanDashboard />} />
 
             {/* USER FLOW */}
             <Route path="/user/apply" element={<Apply />} />
             <Route path="/user/otp" element={<MobileOtp />} />
             <Route path="/user/loan" element={<LoanForm />} />
-            <Route path="/user/basic-details" element={<BasicDetailsForm/>} />
+            <Route path="/user/basic-details" element={<BasicDetailsForm />} />
 
             {/* KYC FLOW */}
             <Route path="/user/pan-verification" element={<PanVerification />} />
             <Route path="/user/kyc-aadhaar" element={<KycAadhaar />} />
-            <Route path="/user/work-details" element={<CompanyDetails/>} />
-            <Route path="/user/company-details" element={<CompanyDetails/>} />
+            <Route path="/user/work-details" element={<CompanyDetails />} />
+            <Route path="/user/company-details" element={<CompanyDetails />} />
             <Route path="/user/bank-details" element={<BankDetails />} />
             <Route path="/user/references" element={<References />} />
             <Route path="/user/salary-slip" element={<SalarySlip />} />
@@ -80,11 +91,12 @@ const App = () => (
             <Route path="/user/loan-status" element={<LoanStatus />} />
             <Route path="*" element={<NotFound />} />
 
-            <Route path="/Privacy-Policies"  element={<PrivacyPolicy/>}/>
+            <Route path="/privacy-policies" element={<PrivacyPolicy />} />
             <Route path="/terms-conditions" element={<TermsConditions />} />
             <Route path="/grievance-redressal" element={<GrievanceRedressal />} />
             <Route path="/fair-practices-code" element={<FairPracticesCode />} />
-        </Routes>
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CheckCircle2, RefreshCcw, Video } from "lucide-react";
 
 type SelfieUploadProps = {
@@ -15,13 +15,13 @@ const SelfieUpload = ({ file, error, onCapture }: SelfieUploadProps) => {
   const [cameraError, setCameraError] = useState("");
   const [cameraReady, setCameraReady] = useState(false);
 
-  const stopCamera = () => {
+  const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setCameraReady(false);
-  };
+  }, []);
 
-  const attachStreamToVideo = async () => {
+  const attachStreamToVideo = useCallback(async () => {
     const video = videoRef.current;
     const stream = streamRef.current;
 
@@ -33,9 +33,9 @@ const SelfieUpload = ({ file, error, onCapture }: SelfieUploadProps) => {
       await video.play();
     } catch (playError) {
       console.error("Selfie camera play error:", playError);
-      setCameraError("Unable to start camera preview");
+     
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!file) {
@@ -48,15 +48,15 @@ const SelfieUpload = ({ file, error, onCapture }: SelfieUploadProps) => {
     setPreviewUrl(objectUrl);
 
     return () => URL.revokeObjectURL(objectUrl);
-  }, [file]);
+  }, [file, stopCamera]);
 
   useEffect(() => {
     return () => {
       stopCamera();
     };
-  }, []);
+  }, [stopCamera]);
 
-  const startCamera = async () => {
+  const startCamera = useCallback(async () => {
     setCameraError("");
     setPreviewUrl("");
 
@@ -84,20 +84,20 @@ const SelfieUpload = ({ file, error, onCapture }: SelfieUploadProps) => {
       setCameraReady(false);
       setCameraError("Camera permission is required to capture selfie");
     }
-  };
+  }, [attachStreamToVideo, stopCamera]);
 
   useEffect(() => {
     if (cameraReady) {
       void attachStreamToVideo();
     }
-  }, [cameraReady]);
+  }, [attachStreamToVideo, cameraReady]);
 
   useEffect(() => {
     if (autoStartedRef.current || file) return;
 
     autoStartedRef.current = true;
     void startCamera();
-  }, [file]);
+  }, [file, startCamera]);
 
   const captureSelfie = () => {
     const video = videoRef.current;

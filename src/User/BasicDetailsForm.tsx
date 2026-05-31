@@ -5,7 +5,7 @@ import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 import UserProgress from "./UserProgress";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+import { API_BASE_URL } from "@/config/api";
 
 type BasicErrors = {
   pincode?: string;
@@ -15,13 +15,15 @@ type BasicErrors = {
   submit?: string;
 };
 
+const MIN_MONTHLY_INCOME = 20000;
+
 const BasicDetailsForm = () => {
   const navigate = useNavigate();
 
   const [employment, setEmployment] = useState("salaried");
   const [pincode, setPincode] = useState("");
   const [city, setCity] = useState("");
-  const [income, setIncome] = useState("10,000");
+  const [income, setIncome] = useState("20,000");
   const [incomeType, setIncomeType] = useState("Account");
   const [errors, setErrors] = useState<BasicErrors>({});
   const [loading, setLoading] = useState(false);
@@ -89,8 +91,8 @@ const BasicDetailsForm = () => {
 
     if (!income) {
       nextErrors.income = "Monthly income is required";
-    } else if (Number(parseAmount(income)) < 5000) {
-      nextErrors.income = "Minimum income should be Rs 5000";
+    } else if (Number(parseAmount(income)) < MIN_MONTHLY_INCOME) {
+      nextErrors.income = "Salary less than Rs 20,000 is not accepted";
     }
 
     if (!incomeType) {
@@ -260,8 +262,8 @@ const BasicDetailsForm = () => {
 
               <div>
                 <label className="text-sm font-bold text-[#071d3a]">Income Received In</label>
-                <div className="mt-2 grid grid-cols-1 gap-2 min-[420px]:grid-cols-3 sm:gap-3">
-                  {["Account", "Cash", "Cheque"].map((type) => (
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:gap-3">
+                  {["Account", "Cheque"].map((type) => (
                     <button
                       key={type}
                       type="button"
