@@ -35,6 +35,7 @@ type Application = {
   application_id?: string;
   loan_id?: string;
   loan_amount?: number | string;
+  principal_amount?: number | string;
   loan_purpose?: string;
   full_name?: string;
   mobile?: string;
@@ -46,7 +47,12 @@ type Application = {
   status?: string;
   outstanding_amount?: number | string;
   maturity_amount?: number | string;
+  total_repayable_amount?: number | string;
+  next_payment_amount?: number | string;
+  paid_amount?: number | string;
+  payment_status?: string;
   due_date?: string;
+  repayment_due_date?: string;
   tenure_days?: number | string;
   interest_rate?: number | string;
   interest_accrued?: number | string;
@@ -299,19 +305,20 @@ const MakePayment = () => {
   }, [returnedOrderId]);
 
   const repayment = useMemo(() => {
-    const loanAmount = Number(application?.loan_amount || 0);
+    const loanAmount = Number(application?.principal_amount || application?.loan_amount || 0);
     const safeLoanAmount = Number.isFinite(loanAmount) && loanAmount > 0 ? loanAmount : 0;
-    const dueDateValue = application?.due_date || application?.submit_at || "";
+    const dueDateValue = application?.repayment_due_date || application?.due_date || "";
     const dueDate = dueDateValue ? new Date(dueDateValue) : null;
     const validDueDate = dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
     const tenureDays = Number(application?.tenure_days || 0);
     const interestAccrued = Number(application?.interest_accrued || 0);
-    const maturityAmountFromCrm = Number(application?.maturity_amount || 0);
-    const paidAmount = Number(application?.repayment_paid_amount || 0);
+    const totalRepayableAmount = Number(application?.total_repayable_amount || application?.maturity_amount || 0);
+    const paidAmount = Number(application?.paid_amount || application?.repayment_paid_amount || 0);
     const isPaid =
       String(application?.status || "").toLowerCase() === "paid" ||
-      String(application?.repayment_status || "").toLowerCase() === "paid";
-    const crmOutstandingAmount = Number(application?.outstanding_amount || 0);
+      String(application?.repayment_status || "").toLowerCase() === "paid" ||
+      String(application?.payment_status || "").toLowerCase() === "paid";
+    const crmOutstandingAmount = Number(application?.next_payment_amount || application?.outstanding_amount || 0);
     const outstandingToday = isPaid
       ? 0
       : Number.isFinite(crmOutstandingAmount) && crmOutstandingAmount > 0
@@ -319,9 +326,9 @@ const MakePayment = () => {
         : 0;
     const maturityAmount = isPaid
       ? 0
-      : Number.isFinite(maturityAmountFromCrm) && maturityAmountFromCrm > 0
-        ? maturityAmountFromCrm
-        : outstandingToday;
+      : Number.isFinite(totalRepayableAmount) && totalRepayableAmount > 0
+        ? totalRepayableAmount
+        : 0;
     const payableAmount =
       paymentType === "full"
         ? outstandingToday
@@ -351,8 +358,6 @@ const MakePayment = () => {
     }
   }, [paymentStatus, repayment.isPaid]);
 
-  const effectiveApplicationId = applicationId || application?.application_id || "";
-
   const detailItems = [
     ["Loan ID", repayment.loanId],
     ["Repayment Due Date", repayment.dueDate ? formatDate(repayment.dueDate) : "-"],
@@ -365,11 +370,6 @@ const MakePayment = () => {
 
   const handlePayment = async () => {
     if (creatingPayment || loading) return;
-
-    if (!effectiveApplicationId) {
-      setError("Application details not found. Please verify your PAN again.");
-      return;
-    }
 
     if (!repaymentAccessToken) {
       setError("Repayment session expired. Please verify your PAN again.");
@@ -397,11 +397,8 @@ const MakePayment = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          applicationId: effectiveApplicationId,
-          loanId: isRealLoanId(application?.loan_id) ? application?.loan_id : repaymentLoanId,
-          mobile: repaymentMobile || application?.mobile || "",
-          amount: repayment.payableAmount,
           paymentType,
+          ...(paymentType === "part" ? { amount: repayment.payableAmount } : {}),
           repaymentAccessToken,
         }),
       });

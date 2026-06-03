@@ -22,9 +22,19 @@ type DashboardLoan = {
   crmLeadId?: string;
   status: string;
   amount: number;
+  requestedLoanAmount?: number;
+  approvedLoanAmount?: number;
+  totalRepayableAmount?: number;
+  outstandingAmount?: number;
   repaymentAmount: number;
+  paidAmount?: number;
+  dueDate?: string;
+  tenureDays?: number | string;
+  interestRate?: number | string;
+  interestAccrued?: number | string;
   disbursalDate?: string;
   repaymentAccessToken?: string;
+  crmRepaymentDetails?: Record<string, unknown>;
   crmStatus?: CrmLeadStatus;
 };
 
@@ -133,15 +143,6 @@ const formatDateTime = (value?: string) => {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-};
-
-const firstPositiveAmount = (...values: Array<number | string | undefined | null>) => {
-  for (const value of values) {
-    const amount = Number(value || 0);
-    if (Number.isFinite(amount) && amount > 0) return amount;
-  }
-
-  return 0;
 };
 
 const getCreditScorePercent = (score?: number) => {
@@ -424,7 +425,6 @@ const LoanDashboard = () => {
   const cibilScore = Number(latestCrmStatus?.cibilScore || 0);
   const creditScorePercent = getCreditScorePercent(cibilScore);
   const applicationProgress = Math.min(100, Math.max(0, Number(latestCrmStatus?.progressPercent || 42)));
-  const totalRepayment = loans.reduce((sum, loan) => sum + (Number(loan.repaymentAmount) || 0), 0);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f6f1ff_0%,#fbfaff_44%,#ffffff_100%)] px-4 py-7 font-sans text-slate-950">
@@ -443,12 +443,6 @@ const LoanDashboard = () => {
                 Keep your profile updated for faster loan processing.
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
-                {/* <span className="rounded-full border border-purple-100 bg-[#fbfaff] px-4 py-2 text-xs font-extrabold text-[#071d3a]">
-                  {loading ? "Loading" : loans.length} Loan{loans.length === 1 ? "" : "s"}
-                </span>
-                <span className="rounded-full border border-purple-100 bg-[#fbfaff] px-4 py-2 text-xs font-extrabold text-[#071d3a]">
-                  {totalRepayment > 0 ? formatINR(totalRepayment) : "No dues"} Repayment
-                </span> */}
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-green-100 bg-green-50 px-4 py-2 text-xs font-extrabold text-green-700">
                   <ShieldCheck size={14} /> Secure Account
                 </span>
@@ -555,16 +549,12 @@ const LoanDashboard = () => {
 
         {loans.map((loan) => {
           const crmStatus = loan.crmStatus;
-          const loanAmount = Number(crmStatus?.loanAmount || loan.amount || 0);
-          const approvedLoanAmount = firstPositiveAmount(
-            crmStatus?.sanction?.principalAmount,
-            crmStatus?.sanction?.approvedLoanAmount,
-            crmStatus?.sanction?.approvedAmount,
-            crmStatus?.sanction?.sanctionedAmount,
-            crmStatus?.approvedLoanAmount,
-            crmStatus?.approvedAmount,
-            crmStatus?.sanctionedAmount
-          );
+          const requestedLoanAmount = Number(loan.requestedLoanAmount || 0);
+          const approvedLoanAmount = Number(loan.approvedLoanAmount || 0);
+          const totalRepayableAmount = Number(loan.totalRepayableAmount || 0);
+          const outstandingAmount = Number(loan.outstandingAmount || 0);
+          const paidAmount = Number(loan.paidAmount || 0);
+          const interestAccrued = Number(loan.interestAccrued || 0);
 
           return (
             <div key={loan.id} className="overflow-hidden rounded-[30px] border border-purple-100 bg-white shadow-[0_24px_80px_rgba(91,33,182,0.10)]">
@@ -589,9 +579,9 @@ const LoanDashboard = () => {
                 </div>
 
                 <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-                  <InfoBox icon={IndianRupee} label="Requested Loan Amount" value={formatINR(loanAmount)} />
+                  <InfoBox icon={IndianRupee} label="Requested Loan Amount" value={formatINR(requestedLoanAmount)} />
                   <InfoBox icon={ShieldCheck} label="Approved Loan Amount" value={formatINR(approvedLoanAmount)} />
-                  <InfoBox icon={ReceiptText} label="Repayment Amount" value={formatINR(loan.repaymentAmount)} />
+                  <InfoBox icon={ReceiptText} label="Outstanding Amount" value={formatINR(outstandingAmount)} />
                   <InfoBox icon={CalendarDays} label="Disbursal Date" value={formatDate(loan.disbursalDate)} />
                 </div>
 
@@ -605,11 +595,27 @@ const LoanDashboard = () => {
                     <InfoBox icon={ReceiptText} label="Loan Status" value={crmStatus.crmStatus || "-"} />
                     <InfoBox
                       icon={CalendarDays}
-                      label={crmStatus.sanction?.dueDate ? "Due Date" : "Last Updated"}
-                      value={formatDateTime(crmStatus.sanction?.dueDate || crmStatus.lastUpdatedAt)}
+                      label={loan.dueDate ? "Due Date" : "Last Updated"}
+                      value={formatDateTime(loan.dueDate || crmStatus.lastUpdatedAt)}
                     />
                   </div>
                 )}
+
+                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <InfoBox icon={ReceiptText} label="Total Repayable" value={formatINR(totalRepayableAmount)} />
+                  <InfoBox icon={IndianRupee} label="Paid Amount" value={formatINR(paidAmount)} />
+                  <InfoBox icon={CalendarDays} label="Loan Tenure" value={loan.tenureDays ? `${loan.tenureDays} days` : "-"} />
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <InfoBox icon={ReceiptText} label="Interest Rate" value={loan.interestRate ? String(loan.interestRate) : "-"} />
+                  <InfoBox icon={IndianRupee} label="Interest Accrued" value={formatINR(interestAccrued)} />
+                  <InfoBox
+                    icon={ShieldCheck}
+                    label="Payment Status"
+                    value={loan.status || crmStatus?.publicStatus || crmStatus?.crmStatus || "-"}
+                  />
+                </div>
 
                 {crmStatus?.sanction && (
                   <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">

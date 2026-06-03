@@ -88,7 +88,7 @@ const createRepaymentAccessToken = ({ applicationId, loanId = "" }) => {
     applicationId: String(applicationId || ""),
     loanId: String(loanId || ""),
     purpose: "repayment",
-    expires: Date.now() + 15 * 60 * 1000,
+    expires: Date.now() + 60 * 60 * 1000,
   }));
   const signature = signRepaymentAccessPayload(payload);
 
@@ -247,24 +247,12 @@ const firstPositiveNumber = (...values) => {
 
 const getCrmRepaymentOutstanding = (crmStatus = {}) => {
   const repayment = crmStatus.repayment || {};
-  const directOutstanding = firstPositiveNumber(
-    repayment.outstanding,
-    repayment.outstandingAmount,
-    repayment.outstanding_amount,
-    repayment.balanceAmount,
-    repayment.balance_amount,
-    repayment.dueAmount,
-    repayment.due_amount,
-    repayment.totalDue,
-    repayment.total_due
-  );
+  const directOutstanding = firstPositiveNumber(repayment.balanceAmount);
 
   if (directOutstanding > 0) return directOutstanding;
 
-  const totalDue = toFiniteNumber(repayment.totalDue || repayment.total_due);
-  const paidAmount = toFiniteNumber(
-    repayment.amountPaid || repayment.amount_paid || repayment.paidAmount || repayment.paid_amount
-  );
+  const totalDue = toFiniteNumber(repayment.totalAmount);
+  const paidAmount = toFiniteNumber(repayment.paidAmount);
 
   return Math.max(0, Number((totalDue - paidAmount).toFixed(2)));
 };
@@ -479,21 +467,47 @@ const fetchDashboardCrmRepaymentDetails = async (loan = {}, crmStatus = null) =>
 const toDashboardLoan = (loan, crmStatus = null, crmRepaymentDetails = null) => {
   const crmLoanAmount = Number(crmStatus?.loanAmount || 0);
   const crmRepaymentLoanAmount = Number(crmRepaymentDetails?.loan_amount || 0);
-  const localLoanAmount = Number(loan.loan_amount || 0);
-  const amount = firstPositiveNumber(crmRepaymentLoanAmount, crmLoanAmount, localLoanAmount);
+  const amount = firstPositiveNumber(crmRepaymentLoanAmount, crmLoanAmount);
   const sanction = crmStatus?.sanction || {};
+  const approvedLoanAmount = firstPositiveNumber(
+    crmRepaymentDetails?.loan_amount,
+    sanction.principalAmount,
+    sanction.approvedLoanAmount,
+    sanction.approvedAmount,
+    sanction.sanctionedAmount,
+    crmStatus?.approvedLoanAmount,
+    crmStatus?.approvedAmount,
+    crmStatus?.sanctionedAmount,
+    amount
+  );
   const crmOutstandingAmount = firstPositiveNumber(
     crmRepaymentDetails?.outstanding_amount,
-    getCrmRepaymentOutstanding(crmStatus || {}),
-    crmRepaymentDetails?.maturity_amount
+    crmRepaymentDetails?.next_payment_amount,
+    getCrmRepaymentOutstanding(crmStatus || {})
   );
   const repaymentAmount = Math.round(crmOutstandingAmount);
+  const paidAmount = firstPositiveNumber(
+    crmRepaymentDetails?.paid_amount,
+    crmRepaymentDetails?.repayment_paid_amount,
+    crmStatus?.repayment?.paidAmount
+  );
+  const totalRepayableAmount = firstPositiveNumber(
+    crmRepaymentDetails?.total_repayable_amount,
+    crmRepaymentDetails?.maturity_amount,
+    crmStatus?.repayment?.totalAmount
+  );
+  const dueDate =
+    crmRepaymentDetails?.repayment_due_date ||
+    crmRepaymentDetails?.due_date ||
+    crmStatus?.repayment?.dueDate ||
+    "";
 
   const applicationId =
     crmStatus?.sourceLeadId ||
     crmStatus?.sourceApplicationId ||
-    loan.application_id ||
-    `WAQTMN-${loan.id}`;
+    crmStatus?.applicationId ||
+    crmRepaymentDetails?.application_id ||
+    "";
   const loanId =
     crmStatus?.loanId ||
     crmStatus?.loan_id ||
@@ -508,13 +522,22 @@ const toDashboardLoan = (loan, crmStatus = null, crmRepaymentDetails = null) => 
     mobile: normalizeMobile(crmStatus?.phone || loan.mobile),
     crmApplicationId: crmStatus?.applicationId || "",
     crmLeadId: crmStatus?.crmLeadId || "",
-    status: crmStatus?.publicStatus || crmStatus?.crmStatus || formatLoanStatus(loan),
-    currentStep: crmStatus?.statusTitle || crmStatus?.currentStage || formatStepLabel(loan.current_step),
+    status: crmStatus?.publicStatus || crmStatus?.crmStatus || crmRepaymentDetails?.repayment_status || "",
+    currentStep: crmStatus?.statusTitle || crmStatus?.currentStage || "",
     amount: Number.isFinite(amount) ? amount : 0,
+    requestedLoanAmount: firstPositiveNumber(crmLoanAmount, crmRepaymentLoanAmount),
+    approvedLoanAmount,
+    totalRepayableAmount,
+    outstandingAmount: repaymentAmount,
     repaymentAmount,
-    paidAmount: firstPositiveNumber(crmRepaymentDetails?.repayment_paid_amount, crmStatus?.repayment?.paidAmount, crmStatus?.repayment?.paid_amount),
+    paidAmount,
+    dueDate,
+    tenureDays: "",
+    interestRate: "",
+    interestAccrued: "",
     disbursalDate: getCrmDisbursalDate(crmStatus) || loan.disbursal_date || loan.submit_at || loan.created_at || loan.updated_at,
-    repaymentAccessToken: createRepaymentAccessToken({ applicationId }),
+    repaymentAccessToken: createRepaymentAccessToken({ applicationId, loanId }),
+    crmRepaymentDetails,
     crmStatus,
   };
 };

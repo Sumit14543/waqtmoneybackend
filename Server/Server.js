@@ -3,7 +3,7 @@ import app from "./src/app.js";
 import transporter from "./src/configs/mailer.js";
 import logger from "./src/utils/logger.js";
 
-const PORT = Number.parseInt(process.env.PORT ?? "5000", 10);
+const PORT = Number.parseInt(process.env.PORT || "5000", 10);
 
 const startServer = () => {
   app.listen(PORT, () => {
