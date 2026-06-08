@@ -932,6 +932,7 @@ export const createApplication = async (data) => {
   return {
     id: result.insertId,
     applicationId,
+    application_id: applicationId,
     employment,
     salary,
     phone,

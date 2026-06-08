@@ -20,6 +20,20 @@ const steps = [
 
 type ApplyField = "salary" | "loanAmount" | "purpose" | "hasLoan" | "phone" | "email" | "agree";
 type ApplyErrors = Partial<Record<ApplyField | "submit", string>>;
+type ApplicationResponseShape = {
+  id?: string | number;
+  applicationId?: string | number;
+  application_id?: string | number;
+  data?: {
+    id?: string | number;
+    applicationId?: string | number;
+    application_id?: string | number;
+    application?: {
+      applicationId?: string | number;
+      application_id?: string | number;
+    };
+  };
+};
 
 const MIN_SALARY = 20000;
 const MIN_LOAN_AMOUNT = 5000;
@@ -239,6 +253,22 @@ const Apply = () => {
     }
   };
 
+  const getApplicationIdFromResponse = (result: ApplicationResponseShape) => {
+    const data = result?.data;
+    const candidates = [
+      data?.applicationId,
+      data?.application_id,
+      data?.id,
+      data?.application?.applicationId,
+      data?.application?.application_id,
+      result?.applicationId,
+      result?.application_id,
+      result?.id,
+    ];
+
+    return candidates.find((value) => value !== undefined && value !== null && String(value).trim());
+  };
+
   const clearApplicationSession = () => {
     [
       "applicationId",
@@ -447,7 +477,7 @@ const Apply = () => {
         return;
       }
 
-      const applicationId = appResult.data?.applicationId || appResult.data?.id;
+      const applicationId = getApplicationIdFromResponse(appResult);
 
       if (!applicationId) {
         showError("Application ID not received from server");
