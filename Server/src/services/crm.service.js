@@ -1,5 +1,6 @@
 import logger from "../utils/logger.js";
 import crypto from "crypto";
+import { CRM_LEADS_API_URL } from "../configs/integrations.js";
 import { getAppSecret } from "../configs/secrets.js";
 
 const firstPresent = (...values) =>
@@ -344,7 +345,7 @@ const buildTestingPayload = (lead) => {
 const CRM_ENDPOINTS = [
   {
     name: "waqtmoney-payday",
-    url: "https://payday-api.waqtmoney.com/api/integrations/leads",
+    url: CRM_LEADS_API_URL,
     keyEnvs: ["INTEGRATION_API_KEYS", "INTEGRATION_API_KEY", "CRM_INTEGRATION_API_KEY"],
     keyHeader: "x-integration-api-key",
     payload: buildTestingPayload,
@@ -388,7 +389,7 @@ const syncEndpoint = async (endpoint, leadData) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        [endpoint.keyHeader]: apiKey || "development-only-crm-key",
+        ...(apiKey ? { [endpoint.keyHeader]: apiKey } : {}),
       },
       body: JSON.stringify(payload),
     });

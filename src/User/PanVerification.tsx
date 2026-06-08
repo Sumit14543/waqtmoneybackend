@@ -41,19 +41,20 @@ const PanVerification = () => {
     return date;
   };
 
-  const findValueByKeys = (source: any, keys: string[]): string => {
+  const findValueByKeys = (source: unknown, keys: string[]): string => {
     if (!source || typeof source !== "object") return "";
 
     const normalizeKey = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, "");
     const normalizedKeys = keys.map(normalizeKey);
+    const entries = Object.entries(source as Record<string, unknown>);
 
-    for (const [key, value] of Object.entries(source)) {
+    for (const [key, value] of entries) {
       if (normalizedKeys.includes(normalizeKey(key)) && value) {
         return String(value);
       }
     }
 
-    for (const value of Object.values(source)) {
+    for (const value of Object.values(source as Record<string, unknown>)) {
       const nestedValue = findValueByKeys(value, keys);
       if (nestedValue) return nestedValue;
     }
@@ -61,7 +62,7 @@ const PanVerification = () => {
     return "";
   };
 
-  const getFatherNameFromResult = (result: any) =>
+  const getFatherNameFromResult = (result: unknown) =>
     findValueByKeys(result, [
       "father_name",
       "fatherName",
@@ -74,7 +75,7 @@ const PanVerification = () => {
       "guardian_name",
     ]);
 
-  const getGenderFromResult = (result: any) =>
+  const getGenderFromResult = (result: unknown) =>
     findValueByKeys(result, ["gender", "gender_name", "genderName", "sex"]);
 
   useEffect(() => {
@@ -83,6 +84,7 @@ const PanVerification = () => {
       setErrors({});
       fetch(`${API_BASE_URL}/pan/verify`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -138,6 +140,8 @@ const PanVerification = () => {
           setLoading(false);
         });
     }
+    // Auto-verifies once the PAN reaches a valid 10-character shape.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pan]);
 
   const handlePanChange = (value: string) => {

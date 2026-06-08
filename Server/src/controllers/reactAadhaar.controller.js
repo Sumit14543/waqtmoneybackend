@@ -1,11 +1,16 @@
 import crypto from "crypto";
 import db from "../configs/db.js";
+import {
+  BIFROST_BASE_URL,
+  LOCAL_API_PUBLIC_BASE_URL,
+  LOCAL_WEB_ORIGINS,
+} from "../configs/integrations.js";
+import logger from "../utils/logger.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
-const CLIENT_BASE_URL = process.env.CLIENT_BASE_URL || "http://localhost:8080";
-const API_PUBLIC_BASE_URL = process.env.API_PUBLIC_BASE_URL || "http://localhost:5000/api";
+const CLIENT_BASE_URL = process.env.CLIENT_BASE_URL || LOCAL_WEB_ORIGINS[0];
+const API_PUBLIC_BASE_URL = process.env.API_PUBLIC_BASE_URL || LOCAL_API_PUBLIC_BASE_URL;
 const SUCCESS_REDIRECT_PATH = "/user/work-details";
-const BIFROST_DEFAULT_BASE_URL = "https://bifrost.unifers.ai/enrich";
 const BIFROST_AADHAAR_START_ENDPOINT =
   process.env.BIFROST_AADHAAR_START_ENDPOINT || "get-aadhaar-verification";
 const BIFROST_AADHAAR_DATA_ENDPOINT =
@@ -100,7 +105,7 @@ const getBifrostBaseUrl = () => {
   const apiUrl = String(process.env.BIFROST_API_URL || "").trim();
   if (apiUrl) return apiUrl.replace(/\/[^/]*$/, "").replace(/\/$/, "");
 
-  return BIFROST_DEFAULT_BASE_URL;
+  return BIFROST_BASE_URL;
 };
 
 const getBifrostEndpointUrl = (endpoint, explicitUrl) => {
@@ -288,7 +293,7 @@ const fetchBifrostAadhaarData = async (ids) => {
         return await callBifrostUrl(dataUrl, { [key]: id }, "Bifrost Aadhaar data");
       } catch (error) {
         lastError = error;
-        console.warn(`Bifrost Aadhaar data failed with ${key}=${id}:`, error.message);
+        logger.warn(`Bifrost Aadhaar data failed with ${key}:`, { id, error: error.message });
       }
     }
   }
@@ -442,7 +447,7 @@ export const startReactAadhaarVerification = async (req, res, next) => {
 export const handleReactAadhaarCallback = async (req, res) => {
   try {
     const callbackPayload = getCallbackPayload(req);
-    console.info("React Aadhaar callback payload:", compactCallbackQuery(callbackPayload));
+    logger.info("React Aadhaar callback payload:", compactCallbackQuery(callbackPayload));
 
     const uniqueId = getCallbackIdentifier(callbackPayload, [
       "uniqueId",
@@ -530,13 +535,13 @@ export const handleReactAadhaarCallback = async (req, res) => {
       ]);
       details = detailsResponse?.data || detailsResponse;
     } catch (error) {
-      console.warn("Bifrost Aadhaar data fetch failed after callback; marking verified from callback:", error.message);
+      logger.warn("Bifrost Aadhaar data fetch failed after callback; marking verified from callback:", error.message);
     }
 
     await markAadhaarVerified(application, details);
     return res.redirect(`${CLIENT_BASE_URL}${getSuccessRedirectPath(req)}?aadhaar=verified`);
   } catch (error) {
-    console.error("React Aadhaar callback error:", error);
+    logger.error("React Aadhaar callback error:", error);
     return redirectAadhaarFailure(req, res, error.message || "callback_exception");
   }
 };
@@ -587,7 +592,7 @@ export const completeReactAadhaarVerification = async (req, res, next) => {
         ]);
         details = detailsResponse?.data || detailsResponse;
       } catch (error) {
-        console.warn("Bifrost Aadhaar completion data fetch failed; completing from saved session:", error.message);
+        logger.warn("Bifrost Aadhaar completion data fetch failed; completing from saved session:", error.message);
       }
     }
 

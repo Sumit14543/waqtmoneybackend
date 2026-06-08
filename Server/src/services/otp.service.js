@@ -1,4 +1,5 @@
 import transporter from "../configs/mailer.js";
+import logger from "../utils/logger.js";
 
 const otpStore = {};
 const attemptStore = {};
@@ -231,7 +232,7 @@ export const sendOTPService = async ({ phone, email }) => {
       channels.push("WhatsApp");
     } catch (error) {
       warnings.push(`WhatsApp failed: ${error.message}`);
-      console.warn("WhatsApp OTP failed:", error.message);
+      logger.warn("WhatsApp OTP failed:", error.message);
     }
   }
 
@@ -240,7 +241,7 @@ export const sendOTPService = async ({ phone, email }) => {
     channels.push("Email");
   } catch (error) {
     warnings.push(`Email failed: ${error.message}`);
-    console.warn("Email OTP failed:", error.message);
+    logger.warn("Email OTP failed:", error.message);
   }
 
   if (channels.length === 0) {

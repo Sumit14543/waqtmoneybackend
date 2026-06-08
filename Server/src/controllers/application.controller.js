@@ -19,7 +19,15 @@ import {
 } from "../services/repayment.service.js";
 import crypto from "crypto";
 import db from "../configs/db.js";
+import {
+  CASHFREE_PRODUCTION_BASE_URL,
+  CASHFREE_SANDBOX_BASE_URL,
+  LOCAL_WEB_ORIGINS,
+  PRODUCTION_WEB_ORIGINS,
+} from "../configs/integrations.js";
 import { getAppSecret } from "../configs/secrets.js";
+import { setApplicationSessionCookie } from "../middleware/applicationSession.middleware.js";
+import { parseCookies } from "../utils/cookies.js";
 import logger from "../utils/logger.js";
 
 const CASHFREE_API_VERSION = process.env.CASHFREE_API_VERSION || "2023-08-01";
@@ -27,13 +35,12 @@ const CASHFREE_ENV = (process.env.CASHFREE_ENV || "production").toLowerCase();
 const CASHFREE_TIMEOUT_MS = Number(process.env.CASHFREE_API_TIMEOUT_MS || 8000);
 const CASHFREE_BASE_URL =
   CASHFREE_ENV === "sandbox"
-    ? "https://sandbox.cashfree.com/pg"
-    : "https://api.cashfree.com/pg";
+    ? CASHFREE_SANDBOX_BASE_URL
+    : CASHFREE_PRODUCTION_BASE_URL;
 const isCashfreeProduction = CASHFREE_ENV !== "sandbox";
-const DEFAULT_PAYMENT_ORIGINS = [
-  "https://waqtmoney.com",
-  "https://www.waqtmoney.com",
-];
+const DEFAULT_PAYMENT_ORIGINS = PRODUCTION_WEB_ORIGINS;
+const isProductionRuntime = () =>
+  process.env.NODE_ENV === "production" || process.env.APP_ENV === "production";
 
 const scheduleCrmSync = (id, reason) => {
   if (!id) return;
@@ -95,6 +102,11 @@ export const applyLoan = async (req, res, next) => {
       applicationId: result.applicationId,
       hasPan: Boolean(result.pan),
     });
+    setApplicationSessionCookie(res, {
+      applicationId: result.applicationId,
+      mobile: result.phone,
+    });
+
     res.status(200).json({
       success: true,
       message: "Application submitted",
@@ -113,7 +125,7 @@ export const updateApp = async (req, res, next) => {
 
     if (id && process.env.UAN_LOOKUP_BACKGROUND_ON_UPDATE === "true") {
       setTimeout(() => getApplicationUanById(id).catch((error) => {
-        console.error("Background UAN sync error:", error.message);
+        logger.error("Background UAN sync error:", error.message);
       }), 0);
     }
 
@@ -178,11 +190,19 @@ export const getApp = async (req, res, next) => {
 export const getRepaymentDetails = async (req, res, next) => {
   try {
     const identifier = String(req.params.id || req.query.id || "").trim();
+    const tokenPayload = readRepaymentAccessToken(getRepaymentAccessTokenFromRequest(req));
 
     if (!identifier) {
       return res.status(400).json({
         success: false,
         message: "Repayment identifier is required",
+      });
+    }
+
+    if (!tokenPayload) {
+      return res.status(401).json({
+        success: false,
+        message: "Repayment session expired. Please verify OTP again.",
       });
     }
 
@@ -203,6 +223,12 @@ export const getRepaymentDetails = async (req, res, next) => {
         message: "Repayment is not available because this loan has not been disbursed yet.",
       });
     }
+
+    await assertRepaymentAccessMatchesCrmDetails(tokenPayload, repaymentDetails, {
+      applicationId: identifier,
+      loanId: identifier,
+      phone: identifier,
+    });
 
     return res.status(200).json({
       success: true,
@@ -251,6 +277,36 @@ const maskEmail = (email) => {
   return `${name.slice(0, 2)}***@${domain}`;
 };
 
+const maskLookupIdentifier = (value) => {
+  const text = String(value || "").trim();
+  const mobile = normalizeMobile(text);
+  const pan = String(text || "").trim().toUpperCase();
+
+  if (/^[6-9]\d{9}$/.test(mobile)) return `mobile:XXXXXX${mobile.slice(-4)}`;
+  if (/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) return `pan:${pan.slice(0, 2)}*****${pan.slice(-1)}`;
+  if (text.length > 8) return `${text.slice(0, 4)}...${text.slice(-4)}`;
+  return text ? "redacted" : "";
+};
+
+const REPAYMENT_ACCESS_COOKIE = "repayment_access_token";
+const REPAYMENT_ACCESS_TTL_MS = 60 * 60 * 1000;
+
+const getRepaymentAccessTokenFromRequest = (req) =>
+  req.body?.repaymentAccessToken ||
+  req.headers["x-repayment-access-token"] ||
+  parseCookies(req)[REPAYMENT_ACCESS_COOKIE] ||
+  "";
+
+const setRepaymentAccessCookie = (res, token) => {
+  res.cookie(REPAYMENT_ACCESS_COOKIE, token, {
+    httpOnly: true,
+    secure: isProductionRuntime(),
+    sameSite: "lax",
+    maxAge: REPAYMENT_ACCESS_TTL_MS,
+    path: "/api/application/repayment",
+  });
+};
+
 const getRepaymentOtpSecret = () => getAppSecret();
 
 const encodeBase64Url = (value) =>
@@ -277,11 +333,12 @@ const createRepaymentOtpToken = ({ pan, phone, email, applicationId, loanId, crm
   return `${payload}.${signature}`;
 };
 
-const createRepaymentAccessToken = ({ pan, applicationId, loanId }) => {
+const createRepaymentAccessToken = ({ pan, applicationId, loanId, phone = "" }) => {
   const payload = encodeBase64Url(JSON.stringify({
     pan: String(pan || "").trim().toUpperCase(),
     applicationId: String(applicationId || ""),
     loanId: String(loanId || ""),
+    phone: normalizeMobile(phone),
     purpose: "repayment",
     expires: Date.now() + 60 * 60 * 1000,
   }));
@@ -314,6 +371,7 @@ const readRepaymentAccessToken = (token) => {
     return {
       applicationId: String(parsed.applicationId || ""),
       loanId: String(parsed.loanId || ""),
+      phone: normalizeMobile(parsed.phone),
       pan: String(parsed.pan || "").trim().toUpperCase(),
     };
   } catch {
@@ -321,7 +379,7 @@ const readRepaymentAccessToken = (token) => {
   }
 };
 
-const hasMatchingRepaymentAccess = (tokenPayload, { applicationIds = [], loanIds = [] } = {}) => {
+const hasMatchingRepaymentAccess = (tokenPayload, { applicationIds = [], loanIds = [], phones = [] } = {}) => {
   if (!tokenPayload) return false;
 
   const normalizedApplicationIds = new Set(
@@ -330,11 +388,44 @@ const hasMatchingRepaymentAccess = (tokenPayload, { applicationIds = [], loanIds
   const normalizedLoanIds = new Set(
     loanIds.map((value) => String(value || "").trim()).filter(Boolean)
   );
+  const normalizedPhones = new Set(
+    phones.map((value) => normalizeMobile(value)).filter(Boolean)
+  );
 
   return (
     (tokenPayload.applicationId && normalizedApplicationIds.has(tokenPayload.applicationId)) ||
-    (tokenPayload.loanId && normalizedLoanIds.has(tokenPayload.loanId))
+    (tokenPayload.loanId && normalizedLoanIds.has(tokenPayload.loanId)) ||
+    (tokenPayload.phone && normalizedPhones.has(tokenPayload.phone))
   );
+};
+
+const assertRepaymentAccessMatchesCrmDetails = async (tokenPayload, crmDetails = {}, extra = {}) => {
+  if (!tokenPayload) {
+    throw createBadRequest("Repayment session expired. Please verify OTP again.");
+  }
+
+  const tokenApplication = tokenPayload.applicationId
+    ? await getApplicationById(tokenPayload.applicationId).catch(() => null)
+    : null;
+
+  const tokenApplicationMobile = normalizeMobile(tokenApplication?.mobile);
+  const crmLoanId = getRealLoanId(crmDetails.loan_id);
+  const customerPhone = normalizeMobile(crmDetails.mobile || crmDetails.crm_status?.phone);
+
+  if (
+    !hasMatchingRepaymentAccess(tokenPayload, {
+      applicationIds: [
+        crmDetails.application_id,
+        crmDetails.crm_status?.sourceLeadId,
+        crmDetails.crm_status?.sourceApplicationId,
+        extra.applicationId,
+      ],
+      loanIds: [crmLoanId, crmDetails.loan_id, extra.loanId],
+      phones: [customerPhone, crmDetails.mobile, crmDetails.crm_status?.phone, tokenApplicationMobile, extra.phone],
+    })
+  ) {
+    throw createBadRequest("Repayment session does not match this loan. Please verify OTP again.");
+  }
 };
 
 const getContactFromRepaymentOtpToken = (token) => {
@@ -450,6 +541,33 @@ const createBadRequest = (message) => {
   return error;
 };
 
+const fetchFirstCrmRepaymentDetails = async (identifiers = []) => {
+  const uniqueIdentifiers = [
+    ...new Set(
+      identifiers
+        .map((identifier) => String(identifier || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+
+  for (const identifier of uniqueIdentifiers) {
+    const details = await fetchCrmRepaymentDetails(identifier).catch((error) => {
+      logger.warn("CRM repayment lookup failed:", {
+        identifier: maskLookupIdentifier(identifier),
+        message: error.message,
+        statusCode: error.statusCode,
+      });
+      return null;
+    });
+
+    if (details) {
+      return details;
+    }
+  }
+
+  return null;
+};
+
 const getCashfreeCredentials = () => {
   const clientId = process.env.CASHFREE_CLIENT_ID || process.env.CASHFREE_APP_ID;
   const clientSecret = process.env.CASHFREE_CLIENT_SECRET || process.env.CASHFREE_SECRET_KEY;
@@ -472,13 +590,13 @@ const getCashfreeCredentials = () => {
 };
 
 const getPublicClientBaseUrl = () =>
-  (process.env.CLIENT_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
+  (process.env.CLIENT_BASE_URL || LOCAL_WEB_ORIGINS[0] || "").replace(/\/$/, "");
 
 const getCashfreeClientBaseUrl = () =>
   (
     process.env.CASHFREE_CLIENT_BASE_URL ||
     process.env.CASHFREE_PUBLIC_BASE_URL ||
-    (isCashfreeProduction ? "https://waqtmoney.com" : getPublicClientBaseUrl())
+    (isCashfreeProduction ? DEFAULT_PAYMENT_ORIGINS[0] : getPublicClientBaseUrl())
   ).replace(/\/$/, "");
 
 const isHttpsUrl = (value) => /^https:\/\/[^/]+/i.test(String(value || ""));
@@ -527,9 +645,8 @@ const assertTrustedPaymentOrigin = (req) => {
   }
 };
 
-const getCashfreeReturnUrl = (orderId, applicationId, req, loanId = "", mobile = "") => {
+const getCashfreeReturnUrl = (orderId, applicationId, req, loanId = "") => {
   const configuredReturnUrl = process.env.CASHFREE_RETURN_URL;
-  const normalizedMobile = String(mobile || "").replace(/\D/g, "").slice(-10);
   const cashfreeClientBaseUrl = getCashfreeClientBaseUrl();
 
   if (configuredReturnUrl) {
@@ -537,19 +654,17 @@ const getCashfreeReturnUrl = (orderId, applicationId, req, loanId = "", mobile =
       .replace("{order_id}", encodeURIComponent(orderId))
       .replace("{application_id}", encodeURIComponent(applicationId || ""))
       .replace("{loan_id}", encodeURIComponent(loanId || ""))
-      .replace("{mobile}", encodeURIComponent(normalizedMobile || ""))
+      .replace("{mobile}", "")
       .replace("{origin}", cashfreeClientBaseUrl);
 
-    if (normalizedMobile) {
-      try {
-        const parsedReturnUrl = new URL(returnUrl);
-        if (applicationId) parsedReturnUrl.searchParams.set("application_id", applicationId);
-        parsedReturnUrl.searchParams.set("mobile", normalizedMobile);
-        if (loanId) parsedReturnUrl.searchParams.set("loan_id", loanId);
-        returnUrl = parsedReturnUrl.toString();
-      } catch {
-        // Keep the configured URL if it is not parseable; validation below will catch invalid production URLs.
-      }
+    try {
+      const parsedReturnUrl = new URL(returnUrl);
+      parsedReturnUrl.searchParams.delete("mobile");
+      if (applicationId) parsedReturnUrl.searchParams.set("application_id", applicationId);
+      if (loanId) parsedReturnUrl.searchParams.set("loan_id", loanId);
+      returnUrl = parsedReturnUrl.toString();
+    } catch {
+      // Keep the configured URL if it is not parseable; validation below will catch invalid production URLs.
     }
 
     if (isCashfreeProduction && !isHttpsUrl(returnUrl)) {
@@ -584,9 +699,6 @@ const getCashfreeReturnUrl = (orderId, applicationId, req, loanId = "", mobile =
   });
   if (applicationId) {
     params.set("application_id", String(applicationId));
-  }
-  if (normalizedMobile) {
-    params.set("mobile", normalizedMobile);
   }
   if (loanId) {
     params.set("loan_id", loanId);
@@ -951,6 +1063,15 @@ export const verifyRepaymentOtp = async (req, res, next) => {
     });
 
     if (result === true) {
+      const repaymentAccessToken = createRepaymentAccessToken({
+        pan: req.body.pan || "",
+        applicationId: contact.applicationId,
+        loanId,
+        phone: contact.phone,
+      });
+
+      setRepaymentAccessCookie(res, repaymentAccessToken);
+
       return res.status(200).json({
         success: true,
         message: "OTP Verified",
@@ -959,11 +1080,7 @@ export const verifyRepaymentOtp = async (req, res, next) => {
           crmApplicationId,
           loanId,
           mobile: contact.phone,
-          repaymentAccessToken: createRepaymentAccessToken({
-            pan: req.body.pan || "",
-            applicationId: contact.applicationId,
-            loanId,
-          }),
+          hasRepaymentSession: true,
         },
       });
     }
@@ -984,8 +1101,8 @@ export const createRepaymentPaymentOrder = async (req, res, next) => {
     const requestedApplicationId = String(req.body.applicationId || "").trim();
     const requestedLoanId = getRealLoanId(req.body.loanId || req.body.repaymentLoanId);
     const requestMobile = String(req.body.mobile || "").replace(/\D/g, "").slice(-10);
-    const accessToken = req.body.repaymentAccessToken || req.headers["x-repayment-access-token"];
-    const tokenPayload = readRepaymentAccessToken(accessToken);
+    const requestedRepaymentLookupId = String(req.body.repaymentLookupId || "").trim();
+    const tokenPayload = readRepaymentAccessToken(getRepaymentAccessTokenFromRequest(req));
 
     if (!tokenPayload) {
       throw createBadRequest("Repayment session expired. Please verify OTP again.");
@@ -993,40 +1110,60 @@ export const createRepaymentPaymentOrder = async (req, res, next) => {
 
     const paymentType = req.body.paymentType === "part" ? "part" : "full";
     const requestedAmount = paymentType === "part" ? normalizeAmount(req.body.amount) : 0;
-    const crmDetails = await fetchCrmRepaymentDetails(
-      requestMobile ||
-        tokenPayload.applicationId ||
-        tokenPayload.loanId ||
-        requestedApplicationId ||
-        requestedLoanId
-    );
+    const tokenApplication = tokenPayload.applicationId
+      ? await getApplicationById(tokenPayload.applicationId).catch(() => null)
+      : null;
+    const requestedApplication = requestedApplicationId && requestedApplicationId !== tokenPayload.applicationId
+      ? await getApplicationById(requestedApplicationId).catch(() => null)
+      : null;
+    const tokenApplicationMobile = normalizeMobile(tokenApplication?.mobile);
+    const requestedApplicationMobile = normalizeMobile(requestedApplication?.mobile);
+    const effectiveCrmDetails = await fetchFirstCrmRepaymentDetails([
+      requestMobile,
+      tokenPayload.phone,
+      tokenPayload.pan,
+      tokenApplicationMobile,
+      requestedApplicationMobile,
+      requestedRepaymentLookupId,
+      requestedLoanId,
+      requestedApplicationId,
+      tokenPayload.loanId,
+      tokenPayload.applicationId,
+    ]);
 
-    if (!crmDetails) {
+    if (!effectiveCrmDetails) {
       return res.status(404).json({
         success: false,
         message: "No active repayment found in CRM",
       });
     }
 
-    const customerPhone = normalizeMobile(crmDetails.mobile || requestMobile);
+    const customerPhone = normalizeMobile(effectiveCrmDetails.mobile || requestMobile);
 
     if (!/^[6-9]\d{9}$/.test(customerPhone)) {
       throw createBadRequest("Registered mobile number is required for payment");
     }
 
-    const crmLoanId = getRealLoanId(crmDetails.loan_id) || tokenPayload.loanId || requestedLoanId;
-    const crmApplicationId = crmDetails.application_id || tokenPayload.applicationId || requestedApplicationId;
+    const crmLoanId = getRealLoanId(effectiveCrmDetails.loan_id) || tokenPayload.loanId || requestedLoanId;
+    const crmApplicationId = effectiveCrmDetails.application_id || tokenPayload.applicationId || requestedApplicationId;
 
     if (
       !hasMatchingRepaymentAccess(tokenPayload, {
-        applicationIds: [crmApplicationId, crmDetails.crm_status?.sourceLeadId, crmDetails.crm_status?.sourceApplicationId],
-        loanIds: [crmLoanId, crmDetails.loan_id],
+        applicationIds: [crmApplicationId, effectiveCrmDetails.crm_status?.sourceLeadId, effectiveCrmDetails.crm_status?.sourceApplicationId],
+        loanIds: [crmLoanId, effectiveCrmDetails.loan_id],
+        phones: [
+          customerPhone,
+          effectiveCrmDetails.mobile,
+          effectiveCrmDetails.crm_status?.phone,
+          tokenApplicationMobile,
+          requestedApplicationMobile,
+        ],
       })
     ) {
       throw createBadRequest("Repayment session does not match this loan. Please verify OTP again.");
     }
 
-    const outstandingAmount = getCrmOutstandingAmount(crmDetails);
+    const outstandingAmount = getCrmOutstandingAmount(effectiveCrmDetails);
 
     if (!Number.isFinite(outstandingAmount) || outstandingAmount <= 0) {
       throw createBadRequest("No outstanding repayment amount is available for this loan");
@@ -1042,7 +1179,7 @@ export const createRepaymentPaymentOrder = async (req, res, next) => {
       String(crmLoanId || crmApplicationId || tokenPayload.applicationId).replace(/[^a-zA-Z0-9_-]/g, ""),
       Date.now(),
     ].join("_");
-    const returnUrl = getCashfreeReturnUrl(orderId, crmApplicationId, req, crmLoanId, customerPhone);
+    const returnUrl = getCashfreeReturnUrl(orderId, crmApplicationId, req, crmLoanId);
     const notifyUrl = getOptionalHttpsUrl(process.env.CASHFREE_NOTIFY_URL);
     const orderMeta = {
       ...(returnUrl ? { return_url: returnUrl } : {}),
@@ -1061,8 +1198,8 @@ export const createRepaymentPaymentOrder = async (req, res, next) => {
         order_currency: "INR",
         customer_details: {
           customer_id: String(crmApplicationId || crmLoanId || customerPhone),
-          customer_name: crmDetails.full_name || "Customer",
-          customer_email: crmDetails.crm_status?.email || undefined,
+          customer_name: effectiveCrmDetails.full_name || "Customer",
+          customer_email: effectiveCrmDetails.crm_status?.email || undefined,
           customer_phone: customerPhone,
         },
         order_meta: Object.keys(orderMeta).length ? orderMeta : undefined,
@@ -1115,7 +1252,39 @@ export const createRepaymentPaymentOrder = async (req, res, next) => {
 
 export const getRepaymentPaymentStatus = async (req, res, next) => {
   try {
+    const tokenPayload = readRepaymentAccessToken(getRepaymentAccessTokenFromRequest(req));
+
+    if (!tokenPayload) {
+      return res.status(401).json({
+        success: false,
+        message: "Repayment session expired. Please verify OTP again.",
+      });
+    }
+
     const order = await getCashfreeOrder(req.params.orderId || req.query.orderId);
+    const orderApplicationId = getApplicationIdFromCashfreeOrder(order);
+    const orderLoanId = getRealLoanId(order?.order_tags?.loan_id);
+    const orderCrmDetails = await fetchFirstCrmRepaymentDetails([
+      orderLoanId,
+      orderApplicationId,
+      tokenPayload.loanId,
+      tokenPayload.phone,
+    ]);
+
+    if (orderCrmDetails) {
+      await assertRepaymentAccessMatchesCrmDetails(tokenPayload, orderCrmDetails, {
+        applicationId: orderApplicationId,
+        loanId: orderLoanId,
+      });
+    } else if (
+      !hasMatchingRepaymentAccess(tokenPayload, {
+        applicationIds: [orderApplicationId],
+        loanIds: [orderLoanId],
+      })
+    ) {
+      throw createBadRequest("Repayment session does not match this payment. Please verify OTP again.");
+    }
+
     const repaymentSync = await syncRepaymentToApplication(order);
 
     res.status(200).json({

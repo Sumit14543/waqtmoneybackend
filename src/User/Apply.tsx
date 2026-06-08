@@ -1,8 +1,6 @@
 import React, { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRightCircle, CalendarDays, ChevronDown, FileText, Lock, Zap } from "lucide-react";
-import Swal from "sweetalert2";
-import "sweetalert2/dist/sweetalert2.min.css";
 import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 import BrandLogo from "@/Components/BrandLogo";
@@ -21,6 +19,7 @@ const steps = [
 ];
 
 type ApplyField = "salary" | "loanAmount" | "purpose" | "hasLoan" | "phone" | "email" | "agree";
+type ApplyErrors = Partial<Record<ApplyField | "submit", string>>;
 
 const MIN_SALARY = 20000;
 const MIN_LOAN_AMOUNT = 5000;
@@ -45,7 +44,7 @@ const Apply = () => {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [agree, setAgree] = useState(true);
-  const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<ApplyErrors>({});
   const [loading, setLoading] = useState(false);
   const [resumePrompt, setResumePrompt] = useState(false);
   const [resumeLoading, setResumeLoading] = useState(false);
@@ -63,13 +62,19 @@ const Apply = () => {
 
   const formatCurrency = (amount: number) => `Rs ${new Intl.NumberFormat("en-IN").format(amount)}`;
 
-  const escapeHtml = (value: string) =>
-    value
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+  const clearFieldError = (field: ApplyField | "submit") => {
+    setFieldErrors((current) => ({ ...current, [field]: undefined, submit: undefined }));
+  };
+
+  const inputBorderClass = (field: ApplyField) =>
+    fieldErrors[field]
+      ? "border-red-400 bg-red-50/40 focus-within:border-red-500 focus:border-red-500"
+      : "border-[#d8c5ff] bg-white focus-within:border-[#8048e2] focus:border-[#8048e2]";
+
+  const renderFieldError = (field: ApplyField) =>
+    fieldErrors[field] ? (
+      <p className="mt-1.5 text-xs font-semibold text-red-600">{fieldErrors[field]}</p>
+    ) : null;
 
   const focusField = (field: ApplyField) => {
     const focusMap = {
@@ -90,42 +95,74 @@ const Apply = () => {
     }
   };
 
-  const showError = async (message: string, field?: ApplyField) => {
-    setError(message);
+  const showError = (message: string, field?: ApplyField) => {
+    setFieldErrors((current) => ({ ...current, [field || "submit"]: message }));
+    if (field) focusField(field);
+  };
 
-    await Swal.fire({
-      icon: "error",
-      title: "Action needed",
-      html: `<p class="mx-auto max-w-[300px] text-sm font-medium leading-6 text-slate-600">${escapeHtml(message)}</p>`,
-      width: 420,
-      padding: "2rem 1.75rem 1.5rem",
-      background: "#ffffff",
-      color: "#071d3a",
-      iconColor: "#ef646c",
-      backdrop: "rgba(15, 23, 42, 0.58)",
-      confirmButtonText: "Got it",
-      buttonsStyling: false,
-      showClass: {
-        popup: "swal2-show",
-        backdrop: "swal2-backdrop-show",
-      },
-      hideClass: {
-        popup: "swal2-hide",
-        backdrop: "swal2-backdrop-hide",
-      },
-      customClass: {
-        popup:
-          "rounded-[22px] border border-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.22)]",
-        icon: "mt-1 border-[3px]",
-        title: "pt-2 text-[24px] font-extrabold tracking-normal text-slate-950",
-        htmlContainer: "mt-1",
-        actions: "mt-6",
-        confirmButton:
-          "inline-flex h-11 min-w-[120px] items-center justify-center rounded-xl bg-gradient-to-r from-[#8048e2] to-[#bd56e4] px-6 text-sm font-bold text-white shadow-[0_12px_24px_rgba(128,72,226,0.28)] outline-none transition hover:opacity-95 focus-visible:ring-4 focus-visible:ring-purple-200",
-      },
-    });
+  const validateField = (field: ApplyField): string => {
+    const salaryAmount = Number(parseAmount(salary));
+    const requestedLoanAmount = Number(parseAmount(loanAmount));
 
-    focusField(field || "salary");
+    if (field === "salary") {
+      if (!salary) return "Please enter your monthly salary.";
+      if (salaryAmount < MIN_SALARY) return `Salary less than ${formatCurrency(MIN_SALARY)} is not accepted.`;
+    }
+
+    if (field === "loanAmount") {
+      if (!loanAmount) return "Please enter the loan amount you need.";
+      if (requestedLoanAmount < MIN_LOAN_AMOUNT) return `Loan amount less than ${formatCurrency(MIN_LOAN_AMOUNT)} is not accepted.`;
+    }
+
+    if (field === "purpose" && !purpose) return "Please select the purpose of your loan.";
+    if (field === "hasLoan" && !hasLoan) return "Please tell us if you already have a running loan.";
+    if (field === "phone") {
+      if (!phone) return "Please enter your mobile number.";
+      if (!/^[6-9]\d{9}$/.test(phone)) {
+        return "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
+      }
+    }
+    if (field === "email") {
+      if (!email.trim()) return "Please enter your email address.";
+      if (!/^\S+@\S+\.\S+$/.test(email)) return "Please enter a valid email address.";
+    }
+    if (field === "agree" && !agree) return "Please accept the Terms and Privacy Policy to continue.";
+
+    return "";
+  };
+
+  const showFieldErrorIfAny = (field: ApplyField) => {
+    const message = validateField(field);
+    setFieldErrors((current) => ({ ...current, [field]: message || undefined, submit: undefined }));
+    return message;
+  };
+
+  const keepFocusOnInvalidField = (field: ApplyField) => {
+    const message = showFieldErrorIfAny(field);
+    if (!message) return false;
+
+    window.setTimeout(() => focusField(field), 0);
+    return true;
+  };
+
+  const getFieldFromTarget = (target: HTMLElement): ApplyField | null => {
+    if (target === salaryRef.current) return "salary";
+    if (target === loanAmountRef.current) return "loanAmount";
+    if (target === purposeRef.current) return "purpose";
+    if (target === phoneRef.current) return "phone";
+    if (target === emailRef.current) return "email";
+    if (target === agreeRef.current) return "agree";
+    if (target instanceof HTMLButtonElement && target.dataset.nextField === "phone") return "hasLoan";
+    return null;
+  };
+
+  const handleFieldBlur = (field: ApplyField) => {
+    showFieldErrorIfAny(field);
+  };
+
+  const didFocusLeaveGroup = (currentTarget: HTMLElement, relatedTarget: EventTarget | null) => {
+    const nextTarget = relatedTarget instanceof Node ? relatedTarget : null;
+    return !nextTarget || !currentTarget.parentElement?.contains(nextTarget);
   };
 
   const validate = (): { message: string; field: ApplyField } | null => {
@@ -268,7 +305,7 @@ const Apply = () => {
     setPhone("");
     setEmail("");
     setAgree(true);
-    setError("");
+    setFieldErrors({});
     setShowIntro(false);
   };
 
@@ -276,10 +313,12 @@ const Apply = () => {
     if (!savedApplicationId || resumeLoading) return;
 
     setResumeLoading(true);
-    setError("");
+    setFieldErrors({});
 
     try {
-      const response = await fetch(`${API_BASE_URL}/application/${savedApplicationId}`);
+      const response = await fetch(`${API_BASE_URL}/application/${savedApplicationId}`, {
+        credentials: "include",
+      });
       const result = await readJsonResponse(response);
 
       if (!response.ok || !result.data) {
@@ -346,6 +385,9 @@ const Apply = () => {
 
     e.preventDefault();
 
+    const field = getFieldFromTarget(target);
+    if (field && keepFocusOnInvalidField(field)) return;
+
     if (target instanceof HTMLButtonElement) {
       target.click();
       const nextField = target.dataset.nextField as ApplyField | undefined;
@@ -372,7 +414,7 @@ const Apply = () => {
     }
 
     setLoading(true);
-    setError("");
+    setFieldErrors({});
 
     const applicationData = {
       employment,
@@ -391,6 +433,7 @@ const Apply = () => {
     try {
       const appRes = await fetch(`${API_BASE_URL}/application/apply`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -772,15 +815,6 @@ const Apply = () => {
             </div>
 
             <div className="px-5 py-7 sm:px-6 sm:py-8 md:px-10 md:py-10">
-              {error && (
-                <p
-                  aria-live="polite"
-                  className="mb-5 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-center text-sm font-medium text-red-600"
-                >
-                  {error}
-                </p>
-              )}
-
               <div className="grid gap-x-5 gap-y-6 md:grid-cols-2">
                 <div>
                   <label className="text-sm font-bold text-[#071d3a]">
@@ -823,7 +857,7 @@ const Apply = () => {
                     Monthly Salary <span className="text-red-500">*</span>
                   </label>
 
-                  <div className="mt-3 flex h-[54px] overflow-hidden rounded-lg border border-[#d9e3f0] bg-white focus-within:border-[#15833d]">
+                  <div className={`mt-3 flex h-[54px] overflow-hidden rounded-lg border ${inputBorderClass("salary")}`}>
                     <span className="flex w-[42px] items-center justify-center border-r border-[#d9e3f0] bg-[#f8fafc] text-lg font-semibold text-[#52657d]">
                       {"\u20b9"}
                     </span>
@@ -834,14 +868,20 @@ const Apply = () => {
                       inputMode="numeric"
                       autoComplete="off"
                       value={salary}
-                      onChange={(e) => setSalary(formatAmount(e.target.value))}
+                      onChange={(e) => {
+                        setSalary(formatAmount(e.target.value));
+                        clearFieldError("salary");
+                      }}
+                      onBlur={() => handleFieldBlur("salary")}
                       placeholder="10,000"
                       className="min-w-0 flex-1 px-4 text-base font-semibold text-[#071d3a] outline-none"
                     />
                   </div>
-                  <p className="mt-2 text-xs font-medium text-[#718096]">
-                    Minimum monthly salary: {formatCurrency(MIN_SALARY)}
-                  </p>
+                  {renderFieldError("salary") || (
+                    <p className="mt-2 text-xs font-medium text-[#718096]">
+                      Minimum monthly salary: {formatCurrency(MIN_SALARY)}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -849,7 +889,7 @@ const Apply = () => {
                     Loan Amount Required <span className="text-red-500">*</span>
                   </label>
 
-                  <div className="mt-3 flex h-[54px] overflow-hidden rounded-lg border border-[#d8c5ff] bg-white focus-within:border-[#8048e2]">
+                  <div className={`mt-3 flex h-[54px] overflow-hidden rounded-lg border ${inputBorderClass("loanAmount")}`}>
                     <span className="flex w-[42px] items-center justify-center border-r border-[#d9e3f0] bg-[#f8fafc] text-lg font-semibold text-[#52657d]">
                       {"\u20b9"}
                     </span>
@@ -860,14 +900,20 @@ const Apply = () => {
                       inputMode="numeric"
                       autoComplete="off"
                       value={loanAmount}
-                      onChange={(e) => setLoanAmount(formatAmount(e.target.value))}
+                      onChange={(e) => {
+                        setLoanAmount(formatAmount(e.target.value));
+                        clearFieldError("loanAmount");
+                      }}
+                      onBlur={() => handleFieldBlur("loanAmount")}
                       placeholder="5,000"
                       className="min-w-0 flex-1 px-4 text-base font-semibold text-[#071d3a] outline-none"
                     />
                   </div>
-                  <p className="mt-2 text-xs font-medium text-[#718096]">
-                    Minimum loan amount: {formatCurrency(MIN_LOAN_AMOUNT)}
-                  </p>
+                  {renderFieldError("loanAmount") || (
+                    <p className="mt-2 text-xs font-medium text-[#718096]">
+                      Minimum loan amount: {formatCurrency(MIN_LOAN_AMOUNT)}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -881,8 +927,12 @@ const Apply = () => {
                       data-apply-control
                       value={purpose}
                       autoComplete="off"
-                      onChange={(e) => setPurpose(e.target.value)}
-                      className="h-[54px] w-full appearance-none rounded-lg border border-[#d8c5ff] bg-white px-4 pr-10 text-base font-semibold text-[#071d3a] outline-none focus:border-[#8048e2]"
+                      onChange={(e) => {
+                        setPurpose(e.target.value);
+                        clearFieldError("purpose");
+                      }}
+                      onBlur={() => handleFieldBlur("purpose")}
+                      className={`h-[54px] w-full appearance-none rounded-lg border px-4 pr-10 text-base font-semibold text-[#071d3a] outline-none ${inputBorderClass("purpose")}`}
                     >
                       <option value="">Select option</option>
                       <option value="Debt Consolidation">Debt Consolidation</option>
@@ -895,6 +945,7 @@ const Apply = () => {
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#4d6380]" />
                   </div>
+                  {renderFieldError("purpose")}
                 </div>
 
                 <div>
@@ -909,8 +960,18 @@ const Apply = () => {
                       data-apply-control
                       data-next-field="phone"
                       aria-pressed={hasLoan === "no"}
-                      onClick={() => setHasLoan("no")}
-                      className={`h-[47px] rounded-lg border text-sm font-bold transition ${hasLoan === "no"
+                      onBlur={(event) => {
+                        if (didFocusLeaveGroup(event.currentTarget, event.relatedTarget)) {
+                          handleFieldBlur("hasLoan");
+                        }
+                      }}
+                      onClick={() => {
+                        setHasLoan("no");
+                        clearFieldError("hasLoan");
+                      }}
+                      className={`h-[47px] rounded-lg border text-sm font-bold transition ${fieldErrors.hasLoan
+                          ? "border-red-400"
+                          : hasLoan === "no"
                           ? "border-[#8048e2] bg-[#8048e2] text-white shadow-[0_9px_18px_rgba(128,72,226,0.22)]"
                           : "border-[#d8c5ff] bg-white text-[#62718a]"
                         }`}
@@ -922,8 +983,18 @@ const Apply = () => {
                       data-apply-control
                       data-next-field="phone"
                       aria-pressed={hasLoan === "yes"}
-                      onClick={() => setHasLoan("yes")}
-                      className={`h-[47px] rounded-lg border text-sm font-bold transition ${hasLoan === "yes"
+                      onBlur={(event) => {
+                        if (didFocusLeaveGroup(event.currentTarget, event.relatedTarget)) {
+                          handleFieldBlur("hasLoan");
+                        }
+                      }}
+                      onClick={() => {
+                        setHasLoan("yes");
+                        clearFieldError("hasLoan");
+                      }}
+                      className={`h-[47px] rounded-lg border text-sm font-bold transition ${fieldErrors.hasLoan
+                          ? "border-red-400"
+                          : hasLoan === "yes"
                           ? "border-[#8048e2] bg-[#8048e2] text-white shadow-[0_9px_18px_rgba(128,72,226,0.22)]"
                           : "border-[#d8c5ff] bg-white text-[#62718a]"
                         }`}
@@ -931,6 +1002,7 @@ const Apply = () => {
                       Yes
                     </button>
                   </div>
+                  {renderFieldError("hasLoan")}
                 </div>
 
                 <div>
@@ -938,7 +1010,7 @@ const Apply = () => {
                     Phone <span className="text-red-500">*</span>
                   </label>
 
-                  <div className="mt-3 flex h-[54px] overflow-hidden rounded-lg border border-[#168544] bg-white">
+                  <div className={`mt-3 flex h-[54px] overflow-hidden rounded-lg border ${inputBorderClass("phone")}`}>
                     <span className="flex items-center gap-1 border-r border-[#d9e3f0] bg-[#f8fafc] px-2 text-sm font-semibold text-[#071d3a]">
                       <span>IN</span>
                       <span>+91</span>
@@ -951,11 +1023,16 @@ const Apply = () => {
                       inputMode="numeric"
                       autoComplete="tel"
                       value={phone}
-                      onChange={(e) => setPhone(digitsOnly(e.target.value).slice(0, 10))}
+                      onChange={(e) => {
+                        setPhone(digitsOnly(e.target.value).slice(0, 10));
+                        clearFieldError("phone");
+                      }}
+                      onBlur={() => handleFieldBlur("phone")}
                       placeholder="9976237656"
                       className="min-w-0 flex-1 px-3 text-sm font-semibold text-[#071d3a] outline-none"
                     />
                   </div>
+                  {renderFieldError("phone")}
                 </div>
 
                 <div>
@@ -969,10 +1046,15 @@ const Apply = () => {
                     type="email"
                     autoComplete="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      clearFieldError("email");
+                    }}
+                    onBlur={() => handleFieldBlur("email")}
                     placeholder="test@gmail.com"
-                    className="mt-3 h-[54px] w-full rounded-lg border border-[#d8c5ff] bg-[#fff] px-4 text-sm font-semibold text-[#071d3a] outline-none focus:border-[#8048e2]"
+                    className={`mt-3 h-[54px] w-full rounded-lg border px-4 text-sm font-semibold text-[#071d3a] outline-none ${inputBorderClass("email")}`}
                   />
+                  {renderFieldError("email")}
                 </div>
 
 
@@ -985,7 +1067,11 @@ const Apply = () => {
                   type="checkbox"
                   autoComplete="off"
                   checked={agree}
-                  onChange={() => setAgree(!agree)}
+                  onChange={() => {
+                    setAgree(!agree);
+                    clearFieldError("agree");
+                  }}
+                  onBlur={() => handleFieldBlur("agree")}
                   className="mt-1 h-4 w-4 rounded border-[#b9c8dc] accent-[#8048e2]"
                 />
                 <span>
@@ -995,6 +1081,12 @@ const Apply = () => {
                   KYC checks, and OTP verification.
                 </span>
               </label>
+              {renderFieldError("agree")}
+              {fieldErrors.submit && (
+                <p className="mt-4 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-center text-sm font-semibold text-red-600">
+                  {fieldErrors.submit}
+                </p>
+              )}
 
               <button
                 type="submit"

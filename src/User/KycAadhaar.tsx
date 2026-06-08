@@ -16,6 +16,7 @@ const KycAadhaar = () => {
   const [aadhaarMasked, setAadhaarMasked] = useState(() => sessionStorage.getItem("aadhaarMasked") || "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [skipLoading, setSkipLoading] = useState(false);
 
   const escapeHtml = (value: string) =>
     value
@@ -65,6 +66,7 @@ const KycAadhaar = () => {
       setError("");
       fetch(`${API_BASE_URL}/react-aadhaar/complete`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -115,6 +117,7 @@ const KycAadhaar = () => {
     if (/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(savedPan)) {
       fetch(`${API_BASE_URL}/pan/verify`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -145,7 +148,9 @@ const KycAadhaar = () => {
 
     if (!applicationId) return;
 
-    fetch(`${API_BASE_URL}/application/${applicationId}`)
+    fetch(`${API_BASE_URL}/application/${applicationId}`, {
+      credentials: "include",
+    })
       .then(async (response) => {
         const result = await response.json().catch(() => ({}));
         if (!response.ok) return null;
@@ -166,6 +171,8 @@ const KycAadhaar = () => {
       .catch((fetchError) => {
         console.error("Aadhaar preview load error:", fetchError);
       });
+    // Bootstrap saved Aadhaar/PAN context once on page entry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // format: 1234 5678 9012
@@ -241,7 +248,7 @@ const KycAadhaar = () => {
   };
 
   const handleSubmit = async () => {
-    if (loading) return;
+    if (loading || skipLoading) return;
 
     if (aadhaar.length !== 12) {
       showError("Enter valid 12-digit Aadhaar number");
@@ -266,6 +273,7 @@ const KycAadhaar = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/react-aadhaar/start`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -304,6 +312,52 @@ const KycAadhaar = () => {
       showError("Server not reachable");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSkip = async () => {
+    if (loading || skipLoading) return;
+
+    const applicationId =
+      sessionStorage.getItem("applicationId") || localStorage.getItem("applicationId");
+
+    if (!applicationId) {
+      showError("Application session not found. Please start again.");
+      return;
+    }
+
+    sessionStorage.setItem("applicationId", applicationId);
+    localStorage.setItem("applicationId", applicationId);
+    localStorage.removeItem("aadhaarPendingApplicationId");
+
+    setSkipLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/react-aadhaar/skip`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: applicationId,
+        }),
+      });
+
+      const result = await readJsonResponse(response);
+
+      if (!response.ok || !result.success) {
+        showError(result.message || "Failed to skip Aadhaar verification");
+        return;
+      }
+
+      navigate(result.data?.nextPath || "/user/work-details");
+    } catch (fetchError) {
+      console.error("Aadhaar skip error:", fetchError);
+      navigate("/user/work-details");
+    } finally {
+      setSkipLoading(false);
     }
   };
 
@@ -371,10 +425,19 @@ const KycAadhaar = () => {
           {/* BUTTON */}
           <button
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={loading || skipLoading}
             className="mt-5 h-[52px] w-full rounded-lg bg-gradient-to-r from-[#8048e2] to-[#bd56e4] text-sm font-bold text-white shadow-[0_9px_18px_rgba(128,72,226,0.22)] transition hover:opacity-90 disabled:opacity-60"
           >
             {loading ? "Saving..." : "Continue"}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSkip}
+            disabled={loading || skipLoading}
+            className="mt-3 h-[48px] w-full rounded-lg border border-[#d8c5ff] bg-white text-sm font-bold text-[#8048e2] transition hover:bg-[#f8f3ff] disabled:opacity-60"
+          >
+            {skipLoading ? "Skipping..." : "Skip for now"}
           </button>
           </div>
 

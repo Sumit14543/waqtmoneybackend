@@ -1,6 +1,9 @@
 import logger from "../utils/logger.js";
+import {
+  BIFROST_BASE_URL,
+  DEEPVUE_MOBILE_TO_UAN_API_URL,
+} from "../configs/integrations.js";
 
-const BIFROST_BASE_URL = "https://bifrost.unifers.ai/enrich";
 const DEFAULT_UAN_ENDPOINT = "get-phone-to-uan";
 const POSITIVE_CACHE_TTL_MS = Number(process.env.UAN_CACHE_TTL_MS || 24 * 60 * 60 * 1000);
 const NEGATIVE_CACHE_TTL_MS = Number(process.env.UAN_NEGATIVE_CACHE_TTL_MS || 10 * 60 * 1000);
@@ -123,8 +126,10 @@ const fetchDeepvueUanByMobile = async (mobile) => {
   if (!token) return "";
 
   try {
+    const url = new URL(DEEPVUE_MOBILE_TO_UAN_API_URL);
+    url.searchParams.set("mobile_number", mobile);
     const response = await fetchWithTimeout(
-      `https://production.deepvue.tech/v1/mobile-intelligence/mobile-to-uan-list?mobile_number=${mobile}`,
+      url.toString(),
       {
         method: "GET",
         headers: {

@@ -185,6 +185,7 @@ const MobileOtp = () => {
       if (applicationId) {
         const updateResponse = await fetch(`${API_BASE_URL}/application/update`, {
           method: "PUT",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
           },
@@ -288,6 +289,7 @@ const MobileOtp = () => {
       if (applicationId) {
         await fetch(`${API_BASE_URL}/application/update`, {
           method: "PUT",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
           },

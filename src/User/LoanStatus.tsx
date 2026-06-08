@@ -1,18 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  BadgeIndianRupee,
   CalendarDays,
   Check,
   CircleHelp,
   Clipboard,
-  Clock3,
   Copy,
   FileCheck2,
   ListChecks,
   Phone,
   Route,
-  Scale,
-  Search,
 } from "lucide-react";
 import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
@@ -29,6 +25,65 @@ type Application = {
   monthly_income?: number | string;
   employment_status?: string;
   last_activity_at?: string;
+};
+
+type CrmTimelineItem = {
+  status?: string;
+  stageKey?: string;
+  publicStatus?: string;
+  title?: string;
+  description?: string;
+  occurredAt?: string;
+  createdAt?: string;
+};
+
+type CrmLeadStatus = {
+  customerName?: string;
+  phone?: string;
+  crmStatus?: string;
+  publicStatus?: string;
+  currentStage?: string;
+  statusCode?: string;
+  dashboardCurrentStageKey?: string;
+  dashboardStatusTitle?: string;
+  dashboardStatusDescription?: string;
+  dashboardNextExpectedAction?: string;
+  dashboardProgressPercent?: number;
+  statusTitle?: string;
+  statusDescription?: string;
+  progressPercent?: number;
+  nextExpectedAction?: string;
+  lastUpdatedAt?: string;
+  timeline?: CrmTimelineItem[];
+  disbursement?: {
+    status?: string;
+  } | null;
+  repayment?: {
+    status?: string;
+    paidAmount?: number;
+    balanceAmount?: number;
+    totalAmount?: number;
+  } | null;
+  sanction?: {
+    agreementNumber?: string;
+    disbursedAmount?: number;
+    dueDate?: string;
+  };
+};
+
+type DashboardLoan = {
+  id: string;
+  loanId?: string;
+  mobile?: string;
+  amount?: number;
+  requestedLoanAmount?: number;
+  approvedLoanAmount?: number;
+  totalRepayableAmount?: number;
+  outstandingAmount?: number;
+  paidAmount?: number;
+  dueDate?: string;
+  disbursalDate?: string;
+  crmStatus?: CrmLeadStatus;
 };
 
 const getStoredApplicationId = () =>
@@ -91,8 +146,57 @@ const formatDateTime = (value?: string) => {
   }).format(date);
 };
 
+const getTimelineText = (item?: CrmTimelineItem) =>
+  [
+    item?.stageKey,
+    item?.status,
+    item?.publicStatus,
+    item?.title,
+    item?.description,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+const findTimelineIndex = (items: CrmTimelineItem[], patterns: RegExp[]) =>
+  items.findIndex((item) => patterns.some((pattern) => pattern.test(getTimelineText(item))));
+
+const getCurrentTimelineIndex = (items: CrmTimelineItem[], status?: CrmLeadStatus) => {
+  const dashboardStageKey = String(status?.dashboardCurrentStageKey || "").toLowerCase();
+  const dashboardStagePatterns: Record<string, RegExp[]> = {
+    loan_disbursed: [/loan\s+disbursed/, /\bdisbursed\b/],
+    repayment_received: [/repayment\s+received/, /\brepayment\b.*\breceived\b/],
+    sent_to_accounts: [/sent\s+to\s+accounts/, /queued\s+for\s+disbursement/],
+  };
+
+  if (dashboardStageKey) {
+    const index = findTimelineIndex(items, dashboardStagePatterns[dashboardStageKey] || [
+      new RegExp(dashboardStageKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    ]);
+
+    if (index >= 0) return index;
+  }
+
+  const currentStage = String(status?.currentStage || status?.statusCode || "").toLowerCase();
+  const exactIndex = items.findIndex((item) =>
+    String(item.stageKey || item.status || item.publicStatus || "").toLowerCase() === currentStage
+  );
+
+  if (exactIndex >= 0) return exactIndex;
+
+  if (currentStage) {
+    const textIndex = findTimelineIndex(items, [
+      new RegExp(currentStage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    ]);
+
+    if (textIndex >= 0) return textIndex;
+  }
+
+  return Math.max(0, items.length - 1);
+};
+
 const LoanStatus = () => {
   const [application, setApplication] = useState<Application | null>(null);
+  const [dashboardLoan, setDashboardLoan] = useState<DashboardLoan | null>(null);
   const [error, setError] = useState("");
 
   const applicationId = getStoredApplicationId();
@@ -105,8 +209,29 @@ const LoanStatus = () => {
 
     const loadApplication = async () => {
       try {
+        const dashboardResponse = await fetch(`${API_BASE_URL}/auth/dashboard`, {
+          credentials: "include",
+        });
+        const dashboardResult = await readJsonResponse(dashboardResponse);
+
+        if (dashboardResponse.ok) {
+          const loans: DashboardLoan[] = dashboardResult.data?.loans || [];
+          const matchingLoan =
+            loans.find((loan) => loan.id === applicationId || loan.loanId === applicationId) ||
+            loans[0] ||
+            null;
+
+          if (matchingLoan) {
+            setDashboardLoan(matchingLoan);
+            return;
+          }
+        }
+
         const response = await fetch(
-          `${API_BASE_URL}/application/${applicationId}`
+          `${API_BASE_URL}/application/${applicationId}`,
+          {
+            credentials: "include",
+          }
         );
 
         const result = await readJsonResponse(response);
@@ -127,32 +252,79 @@ const LoanStatus = () => {
   }, [applicationId]);
 
   const displayApplicationId =
-    application?.application_id || applicationId || "-";
+    dashboardLoan?.id || application?.application_id || applicationId || "-";
 
-  const progress = 45;
+  const crmStatus = dashboardLoan?.crmStatus || null;
+  const rawTimeline = crmStatus?.timeline || [];
+  const currentTimelineIndex = rawTimeline.length ? getCurrentTimelineIndex(rawTimeline, crmStatus || undefined) : -1;
+  const visibleTimeline =
+    currentTimelineIndex >= 0 ? rawTimeline.slice(0, currentTimelineIndex + 1) : rawTimeline;
+  const useTimelineProgress = Boolean(crmStatus?.dashboardCurrentStageKey && rawTimeline.length);
+  const progress = Math.min(
+    100,
+    Math.max(
+      0,
+      Number(
+        useTimelineProgress
+          ? ((currentTimelineIndex + 1) / rawTimeline.length) * 100
+          : crmStatus?.dashboardProgressPercent ??
+          crmStatus?.progressPercent ??
+          (rawTimeline.length && currentTimelineIndex >= 0
+            ? ((currentTimelineIndex + 1) / rawTimeline.length) * 100
+            : 0)
+      )
+    )
+  );
+  const currentTimelineItem =
+    currentTimelineIndex >= 0 ? rawTimeline[currentTimelineIndex] : undefined;
+  const liveStatusTitle =
+    crmStatus?.dashboardStatusTitle ||
+    crmStatus?.statusTitle ||
+    crmStatus?.publicStatus ||
+    currentTimelineItem?.title ||
+    currentTimelineItem?.publicStatus ||
+    "Application status";
+  const liveStatusDescription =
+    crmStatus?.dashboardStatusDescription ||
+    crmStatus?.statusDescription ||
+    currentTimelineItem?.description ||
+    "Live status will appear here once CRM updates this application.";
+  const liveLastUpdated =
+    crmStatus?.lastUpdatedAt ||
+    currentTimelineItem?.occurredAt ||
+    currentTimelineItem?.createdAt ||
+    application?.last_activity_at;
+  const showNextStep =
+    !["loan_disbursed", "repayment_received"].includes(String(crmStatus?.dashboardCurrentStageKey || "")) &&
+    Boolean(crmStatus?.dashboardNextExpectedAction || crmStatus?.nextExpectedAction);
 
   const summaryItems = useMemo(
     () => [
-      ["Loan Amount", formatAmount(application?.loan_amount)],
+      ["Loan Amount", formatAmount(dashboardLoan?.approvedLoanAmount || dashboardLoan?.amount || application?.loan_amount)],
       ["Loan Purpose", application?.loan_purpose || "-"],
-      ["Applicant", application?.full_name || "-"],
-      ["Mobile", application?.mobile || "-"],
+      ["Applicant", crmStatus?.customerName || application?.full_name || "-"],
+      ["Mobile", dashboardLoan?.mobile || crmStatus?.phone || application?.mobile || "-"],
       ["City", application?.city || "-"],
       ["Income", formatAmount(application?.monthly_income)],
       ["Employment", application?.employment_status || "-"],
-      ["Last Updated", formatDateTime(application?.last_activity_at)],
+      ["Last Updated", formatDateTime(liveLastUpdated)],
     ],
-    [application]
+    [
+      application,
+      crmStatus?.customerName,
+      crmStatus?.phone,
+      dashboardLoan,
+      liveLastUpdated,
+    ]
   );
 
-  const verificationItems = [
-    ["Mobile verified", "OTP verification completed"],
-    ["PAN details", "Identity information captured"],
-    ["Aadhaar KYC", "KYC reference stored securely"],
-    ["Work details", "Employment profile available"],
-    ["Bank details", "Bank account information received"],
-    ["Documents", "Required documents uploaded"],
-    ["Video KYC", "Customer video verification submitted"],
+  const crmSummaryItems = [
+    ["CRM Status", crmStatus?.crmStatus || crmStatus?.publicStatus || "-"],
+    ["Current Stage", crmStatus?.currentStage || crmStatus?.statusCode || "-"],
+    ["Disbursement", crmStatus?.disbursement?.status || "-"],
+    ["Repayment", crmStatus?.repayment?.status || "-"],
+    ["Outstanding", formatAmount(dashboardLoan?.outstandingAmount)],
+    ["Paid Amount", formatAmount(dashboardLoan?.paidAmount)],
   ];
 
   const copyApplicationId = async () => {
@@ -220,11 +392,11 @@ const LoanStatus = () => {
 
               <div>
                 <h2 className="text-3xl font-bold text-[#071d3a]">
-                  Application Submitted
+                  {liveStatusTitle}
                 </h2>
 
                 <p className="mt-2 text-sm text-[#52657d]">
-                  Your application is received and queued for verification.
+                  {liveStatusDescription}
                 </p>
 
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -235,16 +407,11 @@ const LoanStatus = () => {
 
                   <span className="inline-flex items-center gap-2 rounded-full border border-[#d8e1ee] bg-[#f8fafc] px-4 py-2 text-xs font-bold text-[#071d3a]">
                     <CalendarDays className="h-4 w-4" />
-                    {formatDate(application?.last_activity_at)}
-                  </span>
-
-                  <span className="inline-flex items-center gap-2 rounded-full border border-[#d8e1ee] bg-[#f8fafc] px-4 py-2 text-xs font-bold text-[#071d3a]">
-                    <Clock3 className="h-4 w-4" />
-                    Usually reviewed within 24–48 hours
+                    {formatDate(liveLastUpdated)}
                   </span>
 
                   <span className="rounded-full bg-[#eaf2ff] px-4 py-2 text-xs font-bold text-[#2f6ce5]">
-                    Submitted
+                    {crmStatus?.publicStatus || crmStatus?.crmStatus || "Live CRM"}
                   </span>
                 </div>
               </div>
@@ -275,72 +442,95 @@ const LoanStatus = () => {
                 </h3>
 
                 <div className="mt-6 space-y-5">
-                  {[
-                    ["Submitted", "Current stage", FileCheck2, true],
-                    ["Verification", "Pending", Search, false],
-                    ["Approval", "Pending", Scale, false],
-                    ["Disbursal", "Pending", BadgeIndianRupee, false],
-                  ].map(([title, subtitle, Icon, active]) => (
-                    <div key={String(title)} className="flex gap-4">
-                      <div className="flex flex-col items-center">
-                        <span
-                          className={`flex h-9 w-9 items-center justify-center rounded-full ${active
-                              ? "bg-[#2f6ce5] text-white"
-                              : "bg-[#e8eef7] text-[#52657d]"
-                            }`}
-                        >
-                          <Icon className="h-4 w-4" />
-                        </span>
+                  {visibleTimeline.length > 0 ? (
+                    visibleTimeline.map((item, index) => {
+                      const isCurrent = index === visibleTimeline.length - 1;
+                      const title = item.title || item.publicStatus || item.status || "CRM update";
+                      const updatedAt = item.occurredAt || item.createdAt;
 
-                        {title !== "Disbursal" && (
-                          <span className="h-8 w-px bg-[#d8e1ee]" />
-                        )}
-                      </div>
+                      return (
+                        <div key={`${title}-${index}`} className="flex gap-4">
+                          <div className="flex flex-col items-center">
+                            <span
+                              className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                                isCurrent ? "bg-[#2f6ce5] text-white" : "bg-[#e9fff4] text-[#0cbd6b]"
+                              }`}
+                            >
+                              <Check className="h-4 w-4" strokeWidth={3} />
+                            </span>
 
-                      <div>
-                        <p className="font-bold text-[#071d3a]">{title}</p>
+                            {index !== visibleTimeline.length - 1 && (
+                              <span className="h-8 w-px bg-[#d8e1ee]" />
+                            )}
+                          </div>
 
-                        <p className="mt-1 text-sm text-[#52657d]">
-                          {subtitle}
-                        </p>
-                      </div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-bold text-[#071d3a]">{title}</p>
+                              {isCurrent && (
+                                <span className="rounded-full bg-[#eaf2ff] px-2.5 py-1 text-[11px] font-bold text-[#2f6ce5]">
+                                  Current
+                                </span>
+                              )}
+                            </div>
+
+                            {item.description && (
+                              <p className="mt-1 text-sm text-[#52657d]">{item.description}</p>
+                            )}
+
+                            {updatedAt && (
+                              <p className="mt-1 text-xs font-semibold text-[#52657d]">
+                                {formatDateTime(updatedAt)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-xl border border-[#e8edf5] bg-white p-4 text-sm font-semibold text-[#52657d]">
+                      CRM timeline is not available for this application yet.
                     </div>
-                  ))}
+                  )}
                 </div>
 
                 <div className="mt-5 rounded-xl bg-[#eaf2ff] p-4 text-sm leading-6 text-[#071d3a]">
-                  Next update: Our team will verify your details and documents.
-                  Keep your phone reachable for any confirmation call.
+                  {showNextStep
+                    ? crmStatus?.dashboardNextExpectedAction || crmStatus?.nextExpectedAction
+                    : "This timeline is fetched from CRM and updates when CRM status changes."}
                 </div>
               </section>
 
-              {/* VERIFICATION */}
+              {/* CRM STATUS */}
               <section className="rounded-2xl border border-[#edf2f7] bg-[#fcfdff] p-5">
                 <h3 className="flex items-center gap-2 text-xl font-bold text-[#071d3a]">
                   <ListChecks className="h-5 w-5" />
-                  Verification
+                  CRM Status
                 </h3>
 
                 <div className="mt-5">
                   <div className="mb-3 flex items-center justify-between text-sm font-semibold text-[#52657d]">
-                    <span>7 of 7 complete</span>
-                    <span>100%</span>
+                    <span>Live CRM progress</span>
+                    <span>{Math.round(progress)}%</span>
                   </div>
 
                   <div className="h-2 overflow-hidden rounded-full bg-[#dfe7f2]">
-                    <div className="h-full w-full rounded-full bg-gradient-to-r from-[#2f6ce5] via-[#1597b8] to-[#16b978]" />
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-[#2f6ce5] via-[#1597b8] to-[#16b978]"
+                      style={{ width: `${progress}%` }}
+                    />
                   </div>
                 </div>
 
                 <div className="mt-5 space-y-3">
-                  {verificationItems.map(([title, subtitle]) => (
+                  {crmSummaryItems.map(([title, value]) => (
                     <div
                       key={title}
                       className="flex items-center justify-between gap-3 rounded-xl border border-[#e8edf5] bg-white p-4"
                     >
                       <div className="flex items-center gap-3">
                         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e9fff4] text-[#0cbd6b]">
-                          <Check className="h-4 w-4" strokeWidth={3} />
+                          <ListChecks className="h-4 w-4" />
                         </span>
 
                         <div>
@@ -349,14 +539,10 @@ const LoanStatus = () => {
                           </p>
 
                           <p className="mt-1 text-xs text-[#52657d]">
-                            {subtitle}
+                            {value}
                           </p>
                         </div>
                       </div>
-
-                      <span className="rounded-full bg-[#e9fff4] px-3 py-1 text-xs font-bold text-[#0c8f53]">
-                        Done
-                      </span>
                     </div>
                   ))}
                 </div>

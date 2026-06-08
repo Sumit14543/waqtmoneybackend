@@ -1,12 +1,10 @@
 import logger from "../utils/logger.js";
+import {
+  CRM_REPAYMENTS_API_URL,
+  CRM_STATUS_API_URL,
+} from "../configs/integrations.js";
 
 const SOURCE_SYSTEM = process.env.CRM_SOURCE_SYSTEM || "waqtmoney";
-const CRM_REPAYMENTS_API_URL =
-  process.env.CRM_REPAYMENTS_API_URL ||
-  "https://payday-api.waqtmoney.com/api/integrations/repayments";
-const CRM_STATUS_API_URL =
-  process.env.CRM_STATUS_API_URL ||
-  "https://payday-api.waqtmoney.com/api/integrations/leads/status";
 
 const getIntegrationApiKey = () =>
   (
@@ -47,6 +45,17 @@ const unwrapCrmData = (payload) => payload?.data || payload;
 const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const normalizePan = (value) => String(value || "").trim().toUpperCase();
 
+const maskLookupIdentifier = (value) => {
+  const text = String(value || "").trim();
+  const mobile = normalizeMobile(text);
+  const pan = normalizePan(text);
+
+  if (/^[6-9]\d{9}$/.test(mobile)) return `mobile:XXXXXX${mobile.slice(-4)}`;
+  if (/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) return `pan:${pan.slice(0, 2)}*****${pan.slice(-1)}`;
+  if (text.length > 8) return `${text.slice(0, 4)}...${text.slice(-4)}`;
+  return text ? "redacted" : "";
+};
+
 const toFiniteNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
@@ -61,16 +70,39 @@ const firstNumber = (...values) => {
   return 0;
 };
 
+const firstText = (...values) =>
+  values.map((value) => String(value || "").trim()).find(Boolean) || "";
+
 const normalizeRepaymentBlock = (repayment = {}) => {
-  const totalAmount = firstNumber(repayment.totalAmount, repayment.dueAmount);
+  const totalAmount = firstNumber(
+    repayment.totalAmount,
+    repayment.total_amount,
+    repayment.dueAmount,
+    repayment.due_amount,
+    repayment.totalDue,
+    repayment.total_due,
+    repayment.maturityAmount,
+    repayment.maturity_amount,
+    repayment.repaymentAmount,
+    repayment.repayment_amount
+  );
   const paidAmount = toFiniteNumber(
     repayment.paidAmount !== undefined && repayment.paidAmount !== null
       ? repayment.paidAmount
-      : repayment.amountPaid
+      : repayment.amountPaid ??
+          repayment.amount_paid ??
+          repayment.paid_amount ??
+          repayment.repaymentPaidAmount ??
+          repayment.repayment_paid_amount
   );
   const balanceAmount = firstNumber(
     repayment.balanceAmount,
+    repayment.balance_amount,
     repayment.outstanding,
+    repayment.outstandingAmount,
+    repayment.outstanding_amount,
+    repayment.nextPaymentAmount,
+    repayment.next_payment_amount,
     Math.max(0, totalAmount - paidAmount)
   );
 
@@ -80,9 +112,29 @@ const normalizeRepaymentBlock = (repayment = {}) => {
     totalAmount,
     paidAmount,
     balanceAmount,
-    dueDate: repayment.dueDate || "",
-    lastPaymentAt: repayment.lastPaymentAt || "",
-    loanId: repayment.loanId || "",
+    dueDate: firstText(repayment.dueDate, repayment.due_date, repayment.repaymentDueDate, repayment.repayment_due_date),
+    lastPaymentAt: firstText(
+      repayment.lastPaymentAt,
+      repayment.last_payment_at,
+      repayment.paidAt,
+      repayment.paid_at,
+      repayment.receivedAt,
+      repayment.received_at
+    ),
+    loanId: firstText(repayment.loanId, repayment.loan_id),
+    tenureDays: firstNumber(repayment.tenureDays, repayment.tenure_days, repayment.tenure, repayment.durationDays),
+    interestRate: firstNumber(repayment.interestRate, repayment.interest_rate, repayment.dailyInterestRate, repayment.daily_interest_rate),
+    interestAccrued: firstNumber(
+      repayment.interestAccrued,
+      repayment.interest_accrued,
+      repayment.interestAmount,
+      repayment.interest_amount,
+      repayment.interestDue,
+      repayment.interest_due
+    ),
+    principalDue: firstNumber(repayment.principalDue, repayment.principal_due),
+    feesDue: firstNumber(repayment.feesDue, repayment.fees_due),
+    penaltyDue: firstNumber(repayment.penaltyDue, repayment.penalty_due),
   };
 };
 
@@ -165,13 +217,29 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
   const requestedLoanAmount = firstNumber(crmStatus.loanAmount);
   const approvedLoanAmount = firstNumber(
     crmStatus.sanction?.principalAmount,
+    crmStatus.sanction?.principal_amount,
     crmStatus.sanction?.approvedLoanAmount,
+    crmStatus.sanction?.approved_loan_amount,
     crmStatus.sanction?.approvedAmount,
+    crmStatus.sanction?.approved_amount,
     crmStatus.sanction?.sanctionedAmount,
+    crmStatus.sanction?.sanctioned_amount,
     crmStatus.approvedLoanAmount,
+    crmStatus.approved_loan_amount,
     crmStatus.approvedAmount,
-    crmStatus.sanctionedAmount
+    crmStatus.approved_amount,
+    crmStatus.sanctionedAmount,
+    repayment.principalDue
   );
+  const tenureDays =
+    repayment.tenureDays ||
+    firstNumber(crmStatus.sanction?.tenureDays, crmStatus.sanction?.tenure_days, crmStatus.tenureDays, crmStatus.tenure_days);
+  const interestAccrued =
+    repayment.interestAccrued ||
+    firstNumber(crmStatus.sanction?.interestAccrued, crmStatus.sanction?.interest_accrued, crmStatus.interestAccrued);
+  const interestRate =
+    repayment.interestRate ||
+    firstNumber(crmStatus.sanction?.interestRate, crmStatus.sanction?.interest_rate, crmStatus.interestRate, crmStatus.interest_rate);
   const repaymentStatus = repayment.status;
 
   return {
@@ -191,6 +259,9 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
     paid_amount: paidAmount,
     due_date: repayment.dueDate || "",
     repayment_due_date: repayment.dueDate || "",
+    tenure_days: tenureDays || undefined,
+    interest_rate: interestRate ? String(interestRate) : "",
+    interest_accrued: interestAccrued || undefined,
     repayment_status: repaymentStatus,
     payment_status: repaymentStatus,
     status: ["paid", "closed"].includes(repaymentStatus) ? "paid" : repaymentStatus,
@@ -217,7 +288,7 @@ export const fetchCrmRepaymentDetails = async (identifier) => {
         : fetchCrmLeadStatusById(identifier)
   ).catch((error) => {
     logger.warn("CRM repayment status fetch failed:", {
-      identifier,
+      identifier: maskLookupIdentifier(identifier),
       message: error.message,
       statusCode: error.statusCode,
     });

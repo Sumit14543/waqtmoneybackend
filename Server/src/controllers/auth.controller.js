@@ -3,13 +3,23 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { getAppSecret, getJwtSecret } from "../configs/secrets.js";
+import {
+  CRM_API_BASE_URL,
+  CRM_SANCTION_PDF_API_URL,
+  CRM_STATUS_API_URL,
+} from "../configs/integrations.js";
 import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 import { fetchCrmRepaymentDetails } from "../services/repayment.service.js";
+import { parseCookies } from "../utils/cookies.js";
 
-const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(0, 10);
+const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const APPLICATION_TABLE = "waqt_money_loan_applications";
-const CRM_STATUS_API_URL = "https://payday-api.waqtmoney.com/api/integrations/leads/status";
 let usersTableReady = false;
+const isProduction = () => process.env.NODE_ENV === "production" || process.env.APP_ENV === "production";
+const getSafeErrorMessage = (err, fallback = "Something went wrong. Please try again shortly.") =>
+  isProduction() && (err.statusCode || err.status || 500) >= 500
+    ? fallback
+    : err.message || fallback;
 
 const ensureDashboardApplicationColumns = async () => {
   const columns = [
@@ -74,25 +84,55 @@ const createToken = (user) =>
     { expiresIn: "7d" }
   );
 
+const AUTH_COOKIE = "auth_token";
+const AUTH_COOKIE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const REPAYMENT_ACCESS_COOKIE = "repayment_access_token";
+const REPAYMENT_ACCESS_TTL_MS = 60 * 60 * 1000;
 const encodeBase64Url = (value) => Buffer.from(value).toString("base64url");
-
 const signRepaymentAccessPayload = (payload) =>
-  crypto
-    .createHmac("sha256", getAppSecret())
-    .update(payload)
-    .digest("base64url");
+  crypto.createHmac("sha256", getAppSecret()).update(payload).digest("base64url");
 
-const createRepaymentAccessToken = ({ applicationId, loanId = "" }) => {
+const createRepaymentAccessToken = ({ applicationId, loanId = "", phone = "" }) => {
   const payload = encodeBase64Url(JSON.stringify({
     pan: "",
     applicationId: String(applicationId || ""),
     loanId: String(loanId || ""),
+    phone: normalizeMobile(phone),
     purpose: "repayment",
-    expires: Date.now() + 60 * 60 * 1000,
+    expires: Date.now() + REPAYMENT_ACCESS_TTL_MS,
   }));
   const signature = signRepaymentAccessPayload(payload);
 
   return `${payload}.${signature}`;
+};
+
+const setRepaymentAccessCookie = (res, token) => {
+  res.cookie(REPAYMENT_ACCESS_COOKIE, token, {
+    httpOnly: true,
+    secure: isProduction(),
+    sameSite: "lax",
+    maxAge: REPAYMENT_ACCESS_TTL_MS,
+    path: "/api/application/repayment",
+  });
+};
+
+const setAuthCookie = (res, token) => {
+  res.cookie(AUTH_COOKIE, token, {
+    httpOnly: true,
+    secure: isProduction(),
+    sameSite: "lax",
+    maxAge: AUTH_COOKIE_TTL_MS,
+    path: "/api/auth",
+  });
+};
+
+const clearAuthCookie = (res) => {
+  res.clearCookie(AUTH_COOKIE, {
+    httpOnly: true,
+    secure: isProduction(),
+    sameSite: "lax",
+    path: "/api/auth",
+  });
 };
 
 const ensureUsersTable = async () => {
@@ -134,7 +174,8 @@ const ensureUsersTable = async () => {
 
 const getBearerToken = (req) => {
   const authHeader = String(req.headers.authorization || "");
-  return authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (authHeader.startsWith("Bearer ")) return authHeader.slice(7);
+  return parseCookies(req)[AUTH_COOKIE] || "";
 };
 
 const getAuthenticatedUser = async (req) => {
@@ -263,6 +304,20 @@ const getIntegrationApiKey = () =>
   process.env.CRM_INTEGRATION_API_KEY ||
   "";
 
+const buildIntegrationHeaders = () => {
+  const apiKey = getIntegrationApiKey();
+  const headers = {
+    Accept: "application/json",
+  };
+
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+    headers["x-integration-api-key"] = apiKey;
+  }
+
+  return headers;
+};
+
 const fetchCrmLeadStatusBySourceId = async (sourceId) => {
   const apiKey = getIntegrationApiKey();
   if (!apiKey) {
@@ -277,9 +332,7 @@ const fetchCrmLeadStatusBySourceId = async (sourceId) => {
   url.searchParams.set("sourceApplicationId", sourceId);
 
   const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: buildIntegrationHeaders(),
   });
   const data = await response.json().catch(() => ({}));
 
@@ -314,22 +367,123 @@ const getCrmDisbursalDate = (crmStatus = {}) =>
   crmStatus.disbursementDate ||
   "";
 
+const getDashboardCrmStageKey = (crmStatus = {}) => {
+  const repaymentStatus = String(
+    crmStatus.repayment?.status ||
+      crmStatus.repayment?.repaymentStatus ||
+      crmStatus.repayment?.scheduleStatus ||
+      ""
+  ).toLowerCase();
+  const disbursementStatus = String(crmStatus.disbursement?.status || "").toLowerCase();
+  const crmStatusText = [
+    crmStatus.currentStage,
+    crmStatus.statusCode,
+    crmStatus.publicStatus,
+    crmStatus.crmStatus,
+    crmStatus.statusTitle,
+  ]
+    .join(" ")
+    .toLowerCase();
+  const disbursedAmount = firstPositiveNumber(
+    crmStatus.sanction?.disbursedAmount,
+    crmStatus.disbursement?.disbursedAmount,
+    crmStatus.disbursedAmount
+  );
+  const hasRepayment = Boolean(
+    repaymentStatus ||
+      firstPositiveNumber(crmStatus.repayment?.totalAmount, crmStatus.repayment?.balanceAmount, crmStatus.repayment?.paidAmount)
+  );
+
+  if (["paid", "closed", "completed", "complete"].includes(repaymentStatus)) {
+    return "repayment_received";
+  }
+
+  if (
+    hasRepayment ||
+    disbursedAmount > 0 ||
+    ["paid", "completed", "complete", "disbursed", "success", "successful"].includes(disbursementStatus) ||
+    /\b(converted|disbursed|repayment|active)\b/.test(crmStatusText)
+  ) {
+    return "loan_disbursed";
+  }
+
+  if (/\b(account|disbursement|disbursal)\b/.test(crmStatusText)) {
+    return "sent_to_accounts";
+  }
+
+  return String(crmStatus.currentStage || crmStatus.statusCode || crmStatus.publicStatus || crmStatus.crmStatus || "")
+    .trim()
+    .toLowerCase();
+};
+
+const getDashboardCrmPresentation = (crmStatus = {}) => {
+  const stageKey = getDashboardCrmStageKey(crmStatus);
+
+  if (stageKey === "repayment_received") {
+    return {
+      statusTitle: "Repayment received",
+      statusDescription: "Your repayment has been received and your balance has been updated.",
+      nextExpectedAction: crmStatus.nextExpectedAction || "",
+      progressPercent: crmStatus.progressPercent,
+    };
+  }
+
+  if (stageKey === "loan_disbursed") {
+    return {
+      statusTitle: "Loan disbursed",
+      statusDescription: "Your loan has been disbursed and the repayment schedule is now active.",
+      nextExpectedAction: crmStatus.nextExpectedAction || "",
+      progressPercent: crmStatus.progressPercent,
+    };
+  }
+
+  if (stageKey === "sent_to_accounts") {
+    return {
+      statusTitle: "Sent to accounts",
+      statusDescription: "Your signed agreement has been received and the loan is queued for disbursement.",
+      nextExpectedAction: crmStatus.nextExpectedAction || "",
+      progressPercent: crmStatus.progressPercent,
+    };
+  }
+
+  return {
+    statusTitle: crmStatus.statusTitle,
+    statusDescription: crmStatus.statusDescription,
+    nextExpectedAction: crmStatus.nextExpectedAction,
+    progressPercent: crmStatus.progressPercent,
+  };
+};
+
+const withDashboardCrmStage = (crmStatus = null) => {
+  if (!crmStatus) return null;
+  const presentation = getDashboardCrmPresentation(crmStatus);
+
+  return {
+    ...crmStatus,
+    dashboardCurrentStageKey: getDashboardCrmStageKey(crmStatus),
+    dashboardStatusTitle: presentation.statusTitle,
+    dashboardStatusDescription: presentation.statusDescription,
+    dashboardNextExpectedAction: presentation.nextExpectedAction,
+    dashboardProgressPercent: presentation.progressPercent,
+  };
+};
+
 const getCrmSanctionPdfUrl = (crmStatus = {}, loanId = "") => {
   const sourceLeadId = crmStatus.sourceLeadId || crmStatus.sourceApplicationId || loanId;
   const rawUrl =
     crmStatus.sanction?.pdfUrl ||
     (sourceLeadId
-      ? `https://payday-api.waqtmoney.com/api/integrations/leads/sanction-pdf?sourceSystem=waqtmoney&sourceLeadId=${encodeURIComponent(sourceLeadId)}`
+      ? `${CRM_SANCTION_PDF_API_URL}?sourceSystem=waqtmoney&sourceLeadId=${encodeURIComponent(sourceLeadId)}`
       : "");
 
   const pdfUrl = String(rawUrl || "");
   if (pdfUrl.startsWith("/api/integrations/")) {
-    return `https://payday-api.waqtmoney.com${pdfUrl}`;
+    return `${CRM_API_BASE_URL}${pdfUrl}`;
   }
 
   return pdfUrl.replace(
     /^https:\/\/(?:www\.)?waqtmoney\.com\/api\/integrations\//i,
-    "https://payday-api.waqtmoney.com/api/integrations/"
+    `${CRM_API_BASE_URL}/api/integrations/`
   );
 };
 
@@ -339,9 +493,7 @@ const fetchCrmSanctionPdf = async (crmStatus, loanId) => {
   if (!apiKey || !pdfUrl) return null;
 
   const response = await fetch(pdfUrl, {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: buildIntegrationHeaders(),
   });
   const contentType = String(response.headers.get("content-type") || "");
 
@@ -361,9 +513,7 @@ const fetchCrmLeadStatusesByMobile = async (mobile) => {
   url.searchParams.set("mobile", mobile);
 
   const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: buildIntegrationHeaders(),
   });
   const data = await response.json().catch(() => ({}));
 
@@ -423,54 +573,16 @@ const getCrmCandidateIds = (application = {}) => {
   ];
 };
 
-const getCrmRepaymentLookupIds = (loan = {}, crmStatus = {}) => {
-  const sanction = crmStatus?.sanction || {};
-  const repayment = crmStatus?.repayment || {};
-  const disbursement = crmStatus?.disbursement || {};
-
-  return [
-    repayment.loanId,
-    repayment.loan_id,
-    disbursement.loanId,
-    disbursement.loan_id,
-    sanction.loanId,
-    sanction.loan_id,
-    crmStatus?.loanId,
-    crmStatus?.loan_id,
-    crmStatus?.sourceLeadId,
-    crmStatus?.sourceApplicationId,
-    crmStatus?.applicationId,
-    loan.application_id,
-    loan.source_lead_id,
-    loan.source_application_id,
-    loan.external_application_id,
-    loan.id,
-  ];
-};
-
-const fetchDashboardCrmRepaymentDetails = async (loan = {}, crmStatus = null) => {
-  const lookupIds = [...new Set(getCrmRepaymentLookupIds(loan, crmStatus || {}).map((value) => String(value || "").trim()).filter(Boolean))];
-
-  for (const lookupId of lookupIds) {
-    const details = await fetchCrmRepaymentDetails(lookupId).catch(() => null);
-    if (details) return details;
-  }
-
-  const mobile = normalizeMobile(crmStatus?.phone || loan.mobile);
-  if (/^[6-9]\d{9}$/.test(mobile)) {
-    return fetchCrmRepaymentDetails(mobile).catch(() => null);
-  }
-
-  return null;
-};
-
-const toDashboardLoan = (loan, crmStatus = null, crmRepaymentDetails = null) => {
+const toDashboardLoan = (loan, crmStatus = null) => {
+  const dashboardCrmStatus = withDashboardCrmStage(crmStatus);
   const crmLoanAmount = Number(crmStatus?.loanAmount || 0);
-  const crmRepaymentLoanAmount = Number(crmRepaymentDetails?.loan_amount || 0);
+  const crmRepaymentLoanAmount = Number(crmStatus?.repayment?.loanAmount || crmStatus?.repayment?.loan_amount || 0);
   const amount = firstPositiveNumber(crmRepaymentLoanAmount, crmLoanAmount);
   const sanction = crmStatus?.sanction || {};
+  const repayment = crmStatus?.repayment || {};
   const approvedLoanAmount = firstPositiveNumber(
-    crmRepaymentDetails?.loan_amount,
+    repayment.loanAmount,
+    repayment.loan_amount,
     sanction.principalAmount,
     sanction.approvedLoanAmount,
     sanction.approvedAmount,
@@ -481,34 +593,44 @@ const toDashboardLoan = (loan, crmStatus = null, crmRepaymentDetails = null) => 
     amount
   );
   const crmOutstandingAmount = firstPositiveNumber(
-    crmRepaymentDetails?.outstanding_amount,
-    crmRepaymentDetails?.next_payment_amount,
+    repayment.balanceAmount,
+    repayment.balance_amount,
+    repayment.outstandingAmount,
+    repayment.outstanding_amount,
+    repayment.nextPaymentAmount,
+    repayment.next_payment_amount,
     getCrmRepaymentOutstanding(crmStatus || {})
   );
   const repaymentAmount = Math.round(crmOutstandingAmount);
   const paidAmount = firstPositiveNumber(
-    crmRepaymentDetails?.paid_amount,
-    crmRepaymentDetails?.repayment_paid_amount,
-    crmStatus?.repayment?.paidAmount
+    repayment.paidAmount,
+    repayment.paid_amount,
+    repayment.amountPaid,
+    repayment.amount_paid
   );
   const totalRepayableAmount = firstPositiveNumber(
-    crmRepaymentDetails?.total_repayable_amount,
-    crmRepaymentDetails?.maturity_amount,
-    crmStatus?.repayment?.totalAmount
+    repayment.totalAmount,
+    repayment.total_amount,
+    repayment.totalDue,
+    repayment.total_due,
+    repayment.maturityAmount,
+    repayment.maturity_amount
   );
   const dueDate =
-    crmRepaymentDetails?.repayment_due_date ||
-    crmRepaymentDetails?.due_date ||
-    crmStatus?.repayment?.dueDate ||
+    repayment.repaymentDueDate ||
+    repayment.repayment_due_date ||
+    repayment.dueDate ||
+    repayment.due_date ||
     "";
 
   const applicationId =
     crmStatus?.sourceLeadId ||
     crmStatus?.sourceApplicationId ||
     crmStatus?.applicationId ||
-    crmRepaymentDetails?.application_id ||
     "";
   const loanId =
+    repayment.loanId ||
+    repayment.loan_id ||
     crmStatus?.loanId ||
     crmStatus?.loan_id ||
     sanction.loanId ||
@@ -522,7 +644,7 @@ const toDashboardLoan = (loan, crmStatus = null, crmRepaymentDetails = null) => 
     mobile: normalizeMobile(crmStatus?.phone || loan.mobile),
     crmApplicationId: crmStatus?.applicationId || "",
     crmLeadId: crmStatus?.crmLeadId || "",
-    status: crmStatus?.publicStatus || crmStatus?.crmStatus || crmRepaymentDetails?.repayment_status || "",
+    status: crmStatus?.publicStatus || crmStatus?.crmStatus || repayment.status || repayment.repaymentStatus || "",
     currentStep: crmStatus?.statusTitle || crmStatus?.currentStage || "",
     amount: Number.isFinite(amount) ? amount : 0,
     requestedLoanAmount: firstPositiveNumber(crmLoanAmount, crmRepaymentLoanAmount),
@@ -536,9 +658,8 @@ const toDashboardLoan = (loan, crmStatus = null, crmRepaymentDetails = null) => 
     interestRate: "",
     interestAccrued: "",
     disbursalDate: getCrmDisbursalDate(crmStatus) || loan.disbursal_date || loan.submit_at || loan.created_at || loan.updated_at,
-    repaymentAccessToken: createRepaymentAccessToken({ applicationId, loanId }),
-    crmRepaymentDetails,
-    crmStatus,
+    crmRepaymentDetails: null,
+    crmStatus: dashboardCrmStatus,
   };
 };
 
@@ -574,13 +695,16 @@ export const signup = async (req, res) => {
       mobile,
     };
 
+    const token = createToken(user);
+    setAuthCookie(res, token);
+
     res.json({
       message: "Signup successful",
-      token: createToken(user),
+      authenticated: true,
       user,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: getSafeErrorMessage(err) });
   }
 };
 
@@ -607,9 +731,12 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
+    const token = createToken(user[0]);
+    setAuthCookie(res, token);
+
     res.json({
       message: "Login success",
-      token: createToken(user[0]),
+      authenticated: true,
       user: {
         id: user[0].id,
         name: user[0].name,
@@ -618,7 +745,7 @@ export const login = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: getSafeErrorMessage(err) });
   }
 };
 
@@ -678,15 +805,26 @@ export const verifyLoginOtp = async (req, res) => {
 
     const user = await findOrCreateOtpUser(mobile);
 
+    const token = createToken(user);
+    setAuthCookie(res, token);
+
     return res.json({
       success: true,
       message: "Login success",
-      token: createToken(user),
+      authenticated: true,
       user,
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: getSafeErrorMessage(err) });
   }
+};
+
+export const logout = async (req, res) => {
+  clearAuthCookie(res);
+  return res.json({
+    success: true,
+    message: "Logged out",
+  });
 };
 
 export const dashboard = async (req, res) => {
@@ -714,11 +852,10 @@ export const dashboard = async (req, res) => {
     );
 
     const crmLoansByMobile = await fetchCrmLeadStatusesByMobile(user.mobile).catch(() => []);
-    const formattedLoans = crmLoansByMobile.length
+    let formattedLoans = crmLoansByMobile.length
       ? await Promise.all(
         crmLoansByMobile.map(async (crmStatus) => {
-          const crmRepaymentDetails = await fetchDashboardCrmRepaymentDetails({}, crmStatus);
-          return toDashboardLoan({}, crmStatus, crmRepaymentDetails);
+          return toDashboardLoan({}, crmStatus);
         })
       )
       : (
@@ -727,8 +864,7 @@ export const dashboard = async (req, res) => {
             const crmStatus = await fetchCrmLeadStatus(getCrmCandidateIds(loan)).catch(() => null);
             if (!crmStatus) return null;
 
-            const crmRepaymentDetails = await fetchDashboardCrmRepaymentDetails(loan, crmStatus);
-            return toDashboardLoan(loan, crmStatus, crmRepaymentDetails);
+            return toDashboardLoan(loan, crmStatus);
           })
         )
       ).filter(Boolean);
@@ -753,7 +889,94 @@ export const dashboard = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: getSafeErrorMessage(err) });
+  }
+};
+
+export const createDashboardRepaymentSession = async (req, res) => {
+  try {
+    await ensureUsersTable();
+
+    if (!getBearerToken(req)) {
+      return res.status(401).json({ message: "Please login again" });
+    }
+
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return res.status(401).json({ message: "Session expired. Please login again" });
+    }
+
+    const requestedApplicationId = String(req.body.applicationId || req.body.loanId || "").trim();
+    const requestedLoanId = String(req.body.crmLoanId || req.body.loanId || "").trim();
+    const requestedMobile = normalizeMobile(req.body.mobile);
+    let ownedApplication = null;
+
+    if (requestedApplicationId) {
+      const lookup = buildApplicationLookup(requestedApplicationId);
+      const [applications] = await db.query(
+        `SELECT application_id, mobile
+         FROM ${APPLICATION_TABLE}
+         WHERE ${lookup.clause}
+           AND (mobile = ? OR mobile = ? OR mobile = ?)
+         LIMIT 1`,
+        [...lookup.values, user.mobile, `91${user.mobile}`, `+91${user.mobile}`]
+      );
+
+      ownedApplication = applications[0] || null;
+    }
+
+    const identifiers = [
+      requestedApplicationId,
+      requestedLoanId,
+      requestedMobile,
+      user.mobile,
+    ].filter(Boolean);
+
+    let crmDetails = null;
+    for (const identifier of identifiers) {
+      crmDetails = await fetchCrmRepaymentDetails(identifier).catch(() => null);
+      if (crmDetails) break;
+    }
+
+    if (!crmDetails) {
+      return res.status(404).json({
+        success: false,
+        message: "No active repayment found for this account",
+      });
+    }
+
+    const crmPhone = normalizeMobile(crmDetails.mobile || crmDetails.crm_status?.phone);
+    if (crmPhone !== user.mobile && !ownedApplication) {
+      return res.status(403).json({
+        success: false,
+        message: "This repayment does not belong to your logged-in account",
+      });
+    }
+
+    const applicationId = crmDetails.application_id || requestedApplicationId;
+    const loanId = crmDetails.loan_id || requestedLoanId;
+    const repaymentAccessToken = createRepaymentAccessToken({
+      applicationId,
+      loanId,
+      phone: crmPhone || user.mobile,
+    });
+
+    setRepaymentAccessCookie(res, repaymentAccessToken);
+
+    return res.json({
+      success: true,
+      message: "Repayment session created",
+      data: {
+        applicationId,
+        loanId,
+        mobile: crmPhone || user.mobile,
+      },
+    });
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({
+      success: false,
+      message: getSafeErrorMessage(err),
+    });
   }
 };
 
@@ -805,7 +1028,7 @@ export const downloadSanctionLetter = async (req, res) => {
 
     return res.status(404).json({ message: "CRM sanction letter is not available" });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: getSafeErrorMessage(err) });
   }
 };
 
@@ -858,7 +1081,7 @@ export const crmLeadStatus = async (req, res) => {
   } catch (err) {
     return res.status(err.statusCode || 500).json({
       success: false,
-      message: err.message,
+      message: getSafeErrorMessage(err),
     });
   }
 };

@@ -7,9 +7,23 @@ import UserProgress from "./UserProgress";
 
 import { API_BASE_URL } from "@/config/api";
 const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+type BankForm = {
+  ifsc: string;
+  bankName: string;
+  branchName: string;
+  city: string;
+  state: string;
+  address: string;
+  holderName: string;
+  accountNumber: string;
+};
+type BankErrors = Partial<Record<keyof BankForm | "submit", string>>;
+
+const getErrorMessage = (error: unknown, fallback = "Something went wrong") =>
+  error instanceof Error ? error.message : fallback;
 
 const BankDetails = () => {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<BankForm>({
     ifsc: "",
     bankName: "",
     branchName: "",
@@ -20,7 +34,7 @@ const BankDetails = () => {
     accountNumber: "",
   });
 
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<BankErrors>({});
   const [loading, setLoading] = useState(false);
   const [ifscLoading, setIfscLoading] = useState(false);
 
@@ -34,7 +48,9 @@ const BankDetails = () => {
 
     sessionStorage.setItem("applicationId", applicationId);
 
-    fetch(`${API_BASE_URL}/application/${applicationId}`)
+    fetch(`${API_BASE_URL}/application/${applicationId}`, {
+      credentials: "include",
+    })
       .then(async (response) => {
         const result = await response.json().catch(() => ({}));
 
@@ -63,13 +79,13 @@ const BankDetails = () => {
     if (form.ifsc.length !== 11) return;
 
     if (!IFSC_REGEX.test(form.ifsc)) {
-      setErrors((current: any) => ({ ...current, ifsc: "Invalid IFSC format" }));
+      setErrors((current) => ({ ...current, ifsc: "Invalid IFSC format" }));
       return;
     }
 
     const controller = new AbortController();
     setIfscLoading(true);
-    setErrors((current: any) => ({ ...current, ifsc: undefined, bankName: undefined }));
+    setErrors((current) => ({ ...current, ifsc: undefined, bankName: undefined }));
 
     fetch(`${API_BASE_URL}/application/ifsc/${form.ifsc}`, {
       signal: controller.signal,
@@ -94,9 +110,9 @@ const BankDetails = () => {
         }));
       })
       .catch((error) => {
-        if (error.name === "AbortError") return;
+        if (error instanceof DOMException && error.name === "AbortError") return;
         console.error("IFSC lookup error:", error);
-        setErrors((current: any) => ({ ...current, ifsc: error.message || "IFSC not found" }));
+        setErrors((current) => ({ ...current, ifsc: getErrorMessage(error, "IFSC not found") }));
         setForm((current) => ({
           ...current,
           bankName: "",
@@ -113,7 +129,7 @@ const BankDetails = () => {
     return () => controller.abort();
   }, [form.ifsc]);
 
-  const handleChange = (e: any) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name } = e.target;
     let { value } = e.target;
 
@@ -132,7 +148,7 @@ const BankDetails = () => {
   };
 
   const validate = () => {
-    const newErrors: any = {};
+    const newErrors: BankErrors = {};
 
     // Bank Name
     if (!form.bankName.trim()) {
@@ -168,7 +184,7 @@ const BankDetails = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: any) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (loading || ifscLoading) return;
 
@@ -189,6 +205,7 @@ const BankDetails = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/application/bank-details`, {
         method: "PUT",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

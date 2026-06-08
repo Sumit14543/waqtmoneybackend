@@ -131,7 +131,9 @@ const VideoVerification: React.FC = () => {
 
     const loadCustomerName = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/application/${applicationId}`);
+        const response = await fetch(`${API_BASE_URL}/application/${applicationId}`, {
+          credentials: "include",
+        });
         const result = await readJsonResponse(response);
         const name =
           result.data?.full_name ||
@@ -167,6 +169,8 @@ const VideoVerification: React.FC = () => {
       clearPreviewTimer();
       stopCamera();
     };
+    // Auto-start camera once when the KYC page mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const startRecording = async () => {
@@ -288,6 +292,7 @@ const VideoVerification: React.FC = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/application/upload-video-kyc`, {
         method: "POST",
+        credentials: "include",
         body: formData,
       });
       const result = await readJsonResponse(response);
@@ -467,4 +472,3 @@ const VideoVerification: React.FC = () => {
 };
 
 export default VideoVerification;
-

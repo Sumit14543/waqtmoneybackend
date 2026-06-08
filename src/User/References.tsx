@@ -43,7 +43,9 @@ const References = () => {
     sessionStorage.setItem("applicationId", applicationId);
     setFetching(true);
 
-    fetch(`${API_BASE_URL}/application/${applicationId}`)
+    fetch(`${API_BASE_URL}/application/${applicationId}`, {
+      credentials: "include",
+    })
       .then(async (response) => {
         const result = await response.json().catch(() => ({}));
 
@@ -121,6 +123,7 @@ const References = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/application/reference-details`, {
         method: "PUT",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

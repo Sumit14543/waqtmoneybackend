@@ -8,9 +8,20 @@ import UserProgress from "./UserProgress";
 import { API_BASE_URL } from "@/config/api";
 
 const salaryDates = Array.from({ length: 31 }, (_, index) => index + 1);
+type CompanyForm = {
+  company: string;
+  designation: string;
+  email: string;
+  salaryDay: string;
+  address: string;
+  pincode: string;
+  education: string;
+  experience: string;
+};
+type CompanyErrors = Partial<Record<keyof CompanyForm | "submit", string>>;
 
 const CompanyDetails = () => {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<CompanyForm>({
     company: "",
     designation: "",
     email: "",
@@ -21,7 +32,7 @@ const CompanyDetails = () => {
     experience: "",
   });
 
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<CompanyErrors>({});
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [uanNumber, setUanNumber] = useState("");
@@ -40,7 +51,9 @@ const CompanyDetails = () => {
     setUanLoading(true);
     setUanNumber("");
 
-    fetch(`${API_BASE_URL}/application/${applicationId}`)
+    fetch(`${API_BASE_URL}/application/${applicationId}`, {
+      credentials: "include",
+    })
       .then(async (response) => {
         const result = await response.json().catch(() => ({}));
 
@@ -72,7 +85,9 @@ const CompanyDetails = () => {
         setFetching(false);
       });
 
-    fetch(`${API_BASE_URL}/application/uan/${applicationId}`)
+    fetch(`${API_BASE_URL}/application/uan/${applicationId}`, {
+      credentials: "include",
+    })
       .then(async (response) => {
         const result = await response.json().catch(() => ({}));
 
@@ -93,7 +108,7 @@ const CompanyDetails = () => {
       });
   }, []);
 
-  const handleChange = (e: any) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
     setErrors({ ...errors, [e.target.name]: undefined, submit: undefined });
   };
@@ -104,7 +119,7 @@ const CompanyDetails = () => {
   };
 
   const validate = () => {
-    const newErrors: any = {};
+    const newErrors: CompanyErrors = {};
 
     if (!form.company.trim()) newErrors.company = "Company name is required";
     if (!form.designation.trim()) newErrors.designation = "Designation is required";
@@ -140,7 +155,7 @@ const CompanyDetails = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: any) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (loading) return;
 
@@ -161,6 +176,7 @@ const CompanyDetails = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/application/work-details`, {
         method: "PUT",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

@@ -12,6 +12,7 @@ Server/dist/
 *.tsbuildinfo
 .vite/
 Server/.vite/
+Server - Copy/
 
 # Environment files and secrets
 .env

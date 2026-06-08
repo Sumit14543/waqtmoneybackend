@@ -146,6 +146,7 @@ const Repayment = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/application/repayment/send-otp`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -242,6 +243,7 @@ const Repayment = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/application/repayment/verify-otp`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -272,14 +274,11 @@ const Repayment = () => {
       } else {
         sessionStorage.removeItem("repaymentLoanId");
       }
-      sessionStorage.setItem("repaymentAccessToken", result.data?.repaymentAccessToken || "");
       setMessage("OTP verified successfully. Our repayment team will help you proceed securely.");
-      if (result.data?.mobile) {
-        navigate(`/repayment/make-payment?mobile=${encodeURIComponent(result.data.mobile)}`);
-      } else if (isRealLoanId(result.data?.loanId)) {
-        navigate(`/repayment/make-payment?loan_id=${encodeURIComponent(result.data.loanId)}`);
+      if (result.data?.applicationId || isRealLoanId(result.data?.loanId)) {
+        navigate("/repayment/make-payment");
       } else {
-        setError("Registered mobile number was not received. Please try again.");
+        setError("Repayment details were not received. Please try again.");
       }
     } catch (fetchError) {
       console.error("Repayment OTP verification error:", fetchError);

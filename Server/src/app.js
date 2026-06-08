@@ -10,41 +10,32 @@ import authRoutes from "./routes/auth.routes.js";
 import panRoutes from "./routes/pan.route.js";
 import aadhaarRoutes from "./routes/aadhaar.routes.js";
 import reactAadhaarRoutes from "./routes/reactAadhaar.routes.js";
+import {
+  LOCAL_WEB_ORIGINS,
+  PRODUCTION_WEB_ORIGINS,
+} from "./configs/integrations.js";
 import logger from "./utils/logger.js";
 
 const app = express();
-const isProduction = process.env.NODE_ENV === "production";
+const isProduction = process.env.NODE_ENV === "production" || process.env.APP_ENV === "production";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadDir = path.resolve(__dirname, "../uploads");
-const defaultProductionOrigins = [
-  "https://waqtmoney.com",
-  "https://www.waqtmoney.com",
-  "http://waqt-testing.waqtmoney.com",
-  "https://waqt-testing.waqtmoney.com",
-];
-const configuredOrigins = [
-  ...defaultProductionOrigins,
+const configuredDevelopmentOrigins = [
   process.env.CLIENT_BASE_URL,
   process.env.ADMIN_BASE_URL,
   ...(process.env.CORS_ORIGINS || "").split(","),
+  ...LOCAL_WEB_ORIGINS,
 ]
   .map((origin) => origin?.trim().replace(/\/$/, ""))
   .filter(Boolean);
-
-const localOrigins = ["http://localhost:8080", "http://127.0.0.1:8080"];
-
-if (process.env.ALLOW_LOCAL_CORS !== "false") {
-  configuredOrigins.push(...localOrigins);
-}
-
-const allowedOrigins = [...new Set(configuredOrigins)];
+const allowedOrigins = [
+  ...new Set(isProduction ? PRODUCTION_WEB_ORIGINS : [...PRODUCTION_WEB_ORIGINS, ...configuredDevelopmentOrigins]),
+];
 const isAllowedCorsOrigin = (origin) => {
   const normalizedOrigin = String(origin || "").trim().replace(/\/$/, "");
   if (!normalizedOrigin) return true;
-  if (allowedOrigins.includes(normalizedOrigin)) return true;
-
-  return /^https?:\/\/(?:[a-z0-9-]+\.)?waqtmoney\.com$/i.test(normalizedOrigin);
+  return allowedOrigins.includes(normalizedOrigin);
 };
 
 const applyCorsHeaders = (req, res) => {
@@ -94,6 +85,61 @@ logger.info("Allowed Origins:", allowedOrigins);
 
 app.disable("x-powered-by");
 
+if (isProduction) {
+  app.set("trust proxy", 1);
+}
+
+const rateLimitBuckets = new Map();
+const createRateLimiter = ({ windowMs, max, message }) => (req, res, next) => {
+  const now = Date.now();
+  const identity = req.ip || req.socket?.remoteAddress || "unknown";
+  const key = `${identity}:${req.method}:${req.baseUrl}${req.path}`;
+  const current = rateLimitBuckets.get(key);
+
+  if (!current || current.resetAt <= now) {
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
+    return next();
+  }
+
+  current.count += 1;
+
+  if (current.count > max) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+    return res.status(429).json({
+      success: false,
+      message,
+    });
+  }
+
+  return next();
+};
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of rateLimitBuckets.entries()) {
+    if (bucket.resetAt <= now) {
+      rateLimitBuckets.delete(key);
+    }
+  }
+}, 5 * 60 * 1000).unref();
+
+const generalLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: isProduction ? 600 : 5000,
+  message: "Too many requests. Please try again shortly.",
+});
+const sensitiveLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: isProduction ? 20 : 200,
+  message: "Too many verification attempts. Please try again after a few minutes.",
+});
+const paymentLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: isProduction ? 30 : 300,
+  message: "Too many payment requests. Please try again after a few minutes.",
+});
+
 app.use((req, res, next) => {
   const corsApplied = applyCorsHeaders(req, res);
 
@@ -107,8 +153,11 @@ app.use((req, res, next) => {
   }
 
   res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  res.setHeader("Cross-Origin-Resource-Policy", isProduction ? "same-site" : "cross-origin");
+  res.setHeader("Cache-Control", "no-store");
 
   if (isProduction) {
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
@@ -119,9 +168,20 @@ app.use((req, res, next) => {
 
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
+app.use(generalLimiter);
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
-app.use("/uploads", express.static(uploadDir));
+app.use(
+  "/uploads",
+  express.static(uploadDir, {
+    dotfiles: "deny",
+    fallthrough: false,
+    setHeaders: (res) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "no-store");
+    },
+  }),
+);
 
 app.use((req, res, next) => {
   if (!isProduction) {
@@ -137,6 +197,32 @@ app.get("/", (req, res) => {
 app.get("/api/health", (req, res) => {
   res.json({ success: true, status: "ok" });
 });
+
+app.use(
+  [
+    "/api/application/repayment/send-otp",
+    "/api/application/repayment/verify-otp",
+    "/api/application/repayment/details",
+    "/api/otp/send-otp",
+    "/api/otp/verify-otp",
+    "/api/auth/signup",
+    "/api/auth/login",
+    "/api/auth/send-login-otp",
+    "/api/auth/verify-login-otp",
+    "/api/auth/repayment-session",
+    "/api/pan/verify",
+    "/api/aadhaar",
+    "/api/react-aadhaar",
+  ],
+  sensitiveLimiter,
+);
+app.use(
+  [
+    "/api/application/repayment/create-payment-order",
+    "/api/application/repayment/payment-status",
+  ],
+  paymentLimiter,
+);
 
 app.use("/api/loan", loanRoutes);
 app.use("/api/application", applicationRoutes);

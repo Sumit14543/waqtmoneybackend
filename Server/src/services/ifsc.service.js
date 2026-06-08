@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import { IFSC_API_URL } from "../configs/integrations.js";
 
 const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -55,7 +56,7 @@ export const lookupIfsc = async (value) => {
   let response;
 
   try {
-    response = await fetch(`https://ifsc.razorpay.com/${ifsc}`, {
+    response = await fetch(`${IFSC_API_URL}/${ifsc}`, {
       signal: AbortSignal.timeout(10000),
     });
   } catch {

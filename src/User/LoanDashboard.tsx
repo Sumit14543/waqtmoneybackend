@@ -33,7 +33,6 @@ type DashboardLoan = {
   interestRate?: number | string;
   interestAccrued?: number | string;
   disbursalDate?: string;
-  repaymentAccessToken?: string;
   crmRepaymentDetails?: Record<string, unknown>;
   crmStatus?: CrmLeadStatus;
 };
@@ -65,6 +64,11 @@ type CrmLeadStatus = {
   statusCode?: string;
   publicStatus?: string;
   currentStage?: string;
+  dashboardCurrentStageKey?: string;
+  dashboardStatusTitle?: string;
+  dashboardStatusDescription?: string;
+  dashboardNextExpectedAction?: string;
+  dashboardProgressPercent?: number;
   statusTitle?: string;
   statusDescription?: string;
   progressPercent?: number;
@@ -161,14 +165,14 @@ const InfoBox = ({
   label: string;
   value: string;
 }) => (
-  <div className="group rounded-2xl border border-purple-100 bg-white px-4 py-5 shadow-[0_12px_30px_rgba(91,33,182,0.06)] transition hover:-translate-y-0.5 hover:border-[#d8c5ff] hover:shadow-[0_18px_40px_rgba(91,33,182,0.12)]">
-    <div className="flex items-start justify-between gap-3">
-      <div>
-        <p className="text-sm font-bold text-[#52657d]">{label}</p>
-        <h3 className="mt-2 break-words text-xl font-extrabold text-[#071d3a]">{value}</h3>
+  <div className="group min-h-[92px] rounded-2xl border border-purple-100 bg-white px-4 py-4 shadow-[0_12px_30px_rgba(91,33,182,0.06)] transition hover:-translate-y-0.5 hover:border-[#d8c5ff] hover:shadow-[0_18px_40px_rgba(91,33,182,0.12)]">
+    <div className="flex h-full items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold leading-5 text-[#52657d]">{label}</p>
+        <h3 className="mt-1.5 break-words text-[clamp(1.05rem,1.7vw,1.3rem)] font-extrabold leading-tight text-[#071d3a] [overflow-wrap:anywhere]">{value}</h3>
       </div>
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f3eaff] text-[#8048e2] transition group-hover:bg-[#8048e2] group-hover:text-white">
-        <Icon size={19} />
+        <Icon size={18} />
       </span>
     </div>
   </div>
@@ -177,6 +181,51 @@ const InfoBox = ({
 const isRealLoanId = (value?: string | null) => {
   const id = String(value || "").trim();
   return Boolean(id) && !/^WAQTMN-PD-/i.test(id);
+};
+
+const getTimelineText = (item?: CrmTimelineItem) =>
+  [
+    item?.stageKey,
+    item?.status,
+    item?.publicStatus,
+    item?.title,
+    item?.description,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+const findTimelineIndex = (items: CrmTimelineItem[], patterns: RegExp[]) =>
+  items.findIndex((item) => patterns.some((pattern) => pattern.test(getTimelineText(item))));
+
+const getCurrentTimelineIndex = (items: CrmTimelineItem[], status?: CrmLeadStatus) => {
+  const dashboardStageKey = String(status?.dashboardCurrentStageKey || "").toLowerCase();
+  const dashboardStagePatterns: Record<string, RegExp[]> = {
+    loan_disbursed: [/loan\s+disbursed/, /\bdisbursed\b/],
+    repayment_received: [/repayment\s+received/, /\brepayment\b.*\breceived\b/],
+    sent_to_accounts: [/sent\s+to\s+accounts/, /queued\s+for\s+disbursement/],
+  };
+
+  if (dashboardStageKey) {
+    const dashboardIndex = findTimelineIndex(items, dashboardStagePatterns[dashboardStageKey] || [
+      new RegExp(dashboardStageKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    ]);
+
+    if (dashboardIndex >= 0) return dashboardIndex;
+  }
+
+  const currentStage = String(status?.currentStage || status?.statusCode || "").toLowerCase();
+  const matchedIndex = items.findIndex((item) =>
+    String(item.stageKey || item.status || item.publicStatus || "").toLowerCase() === currentStage
+  );
+
+  if (matchedIndex >= 0) return matchedIndex;
+
+  const statusIndex = findTimelineIndex(items, [
+    new RegExp(currentStage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  ]);
+  if (currentStage && statusIndex >= 0) return statusIndex;
+
+  return Math.max(0, items.length - 1);
 };
 
 const ProcessTimeline = ({
@@ -188,15 +237,23 @@ const ProcessTimeline = ({
 }) => {
   if (!items.length) return null;
 
-  const currentStage = String(status?.currentStage || status?.statusCode || "").toLowerCase();
-  const matchedIndex = items.findIndex((item) =>
-    String(item.stageKey || item.status || item.publicStatus || "").toLowerCase() === currentStage
-  );
-  const currentIndex = matchedIndex >= 0 ? matchedIndex : items.length - 1;
+  const currentIndex = getCurrentTimelineIndex(items, status);
+  const visibleItems = items.slice(0, currentIndex + 1);
+  const useTimelineProgress = Boolean(status?.dashboardCurrentStageKey);
   const progressPercent = Math.min(
     100,
-    Math.max(0, Number(status?.progressPercent || ((currentIndex + 1) / items.length) * 100))
+    Math.max(
+      0,
+      Number(
+        useTimelineProgress
+          ? ((currentIndex + 1) / items.length) * 100
+          : status?.dashboardProgressPercent ?? status?.progressPercent ?? ((currentIndex + 1) / items.length) * 100
+      )
+    )
   );
+  const showNextStep =
+    !["loan_disbursed", "repayment_received"].includes(String(status?.dashboardCurrentStageKey || "")) &&
+    Boolean(status?.dashboardNextExpectedAction || status?.nextExpectedAction);
   const currentItem = items[currentIndex] || items[items.length - 1];
   const lastUpdated = status?.lastUpdatedAt || currentItem?.occurredAt || currentItem?.createdAt;
 
@@ -209,7 +266,7 @@ const ProcessTimeline = ({
             <div>
               <p className="text-xs font-extrabold uppercase tracking-wide text-[#8048e2]">Loan Status</p>
               <h2 className="mt-2 text-2xl font-extrabold leading-tight text-[#071d3a] sm:text-3xl">
-                {status?.statusTitle || status?.publicStatus || "Application progress"}
+                {status?.dashboardStatusTitle || status?.statusTitle || status?.publicStatus || "Application progress"}
               </h2>
               {lastUpdated && (
                 <p className="mt-2 text-xs font-bold text-[#52657d]">
@@ -225,7 +282,7 @@ const ProcessTimeline = ({
                   <p className="mt-1 text-3xl font-extrabold text-[#8048e2]">{Math.round(progressPercent)}%</p>
                 </div>
                 <p className="text-right text-xs font-bold leading-5 text-[#52657d]">
-                  {currentIndex + 1} of {items.length} steps completed
+                  {visibleItems.length} steps completed
                 </p>
               </div>
               <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#ebe3ff]">
@@ -237,10 +294,12 @@ const ProcessTimeline = ({
             </div>
           </div>
 
-          {status?.nextExpectedAction && (
+          {showNextStep && (
             <div className="mt-4 rounded-2xl border border-amber-100 bg-white/80 px-4 py-3">
               <p className="text-xs font-extrabold uppercase tracking-wide text-amber-700">Next Step</p>
-              <p className="mt-1 text-sm font-extrabold text-[#071d3a]">{status.nextExpectedAction}</p>
+              <p className="mt-1 text-sm font-extrabold text-[#071d3a]">
+                {status.dashboardNextExpectedAction || status.nextExpectedAction}
+              </p>
             </div>
           )}
         </div>
@@ -257,10 +316,10 @@ const ProcessTimeline = ({
           </div>
 
           <div className="relative mx-auto max-w-[760px]">
-            {items.map((item, index) => {
+            {visibleItems.map((item, index) => {
               const isDone = index <= currentIndex;
               const isCurrent = index === currentIndex;
-              const isLast = index === items.length - 1;
+              const isLast = index === visibleItems.length - 1;
 
               return (
                 <div
@@ -331,10 +390,11 @@ const LoanDashboard = () => {
   const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [openingRepayment, setOpeningRepayment] = useState(false);
   const [error, setError] = useState("");
 
   const userName = useMemo(() => {
-    const authUser = localStorage.getItem("authUser");
+    const authUser = sessionStorage.getItem("authUser");
     if (data?.user?.name) return data.user.name;
 
     try {
@@ -345,27 +405,20 @@ const LoanDashboard = () => {
   }, [data]);
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken");
-    if (!token) {
-      navigate("/login");
-      return;
-    }
-
     const loadDashboard = async () => {
       setLoading(true);
       setError("");
 
       try {
         const response = await fetch(`${API_BASE_URL}/auth/dashboard`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          credentials: "include",
         });
         const result = await response.json().catch(() => ({}));
 
         if (response.status === 401) {
           localStorage.removeItem("authToken");
           localStorage.removeItem("authUser");
+          sessionStorage.removeItem("authUser");
           navigate("/login");
           return;
         }
@@ -387,35 +440,73 @@ const LoanDashboard = () => {
     loadDashboard();
   }, [navigate]);
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (logoutError) {
+      console.error("Logout error:", logoutError);
+    }
+
     localStorage.removeItem("authToken");
     localStorage.removeItem("authUser");
+    sessionStorage.removeItem("authUser");
     navigate("/login");
   };
 
-  const openRepayment = (loan?: DashboardLoan) => {
-    if (!loan?.id || !loan.repaymentAccessToken) {
+  const openRepayment = async (loan?: DashboardLoan) => {
+    if (openingRepayment) return;
+
+    if (!loan?.id) {
       navigate("/repayment");
       return;
     }
 
-    sessionStorage.setItem("repaymentApplicationId", loan.id);
-    if (loan.mobile) {
-      sessionStorage.setItem("repaymentMobile", loan.mobile);
-    }
-    sessionStorage.removeItem("repaymentLoanId");
-    sessionStorage.setItem("repaymentAccessToken", loan.repaymentAccessToken);
-    if (!loan.mobile && !isRealLoanId(loan.loanId)) {
+    setOpeningRepayment(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/repayment-session`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          applicationId: loan.id,
+          loanId: loan.id,
+          crmLoanId: loan.loanId || "",
+          mobile: loan.mobile || "",
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setError(result.message || "Please verify PAN/OTP to continue repayment");
+        navigate("/repayment");
+        return;
+      }
+
+      const repaymentData = result.data || {};
+      sessionStorage.setItem("repaymentApplicationId", repaymentData.applicationId || loan.id);
+      if (repaymentData.mobile || loan.mobile) {
+        sessionStorage.setItem("repaymentMobile", repaymentData.mobile || loan.mobile || "");
+      }
+      if (isRealLoanId(repaymentData.loanId || loan.loanId)) {
+        sessionStorage.setItem("repaymentLoanId", repaymentData.loanId || loan.loanId || "");
+      } else {
+        sessionStorage.removeItem("repaymentLoanId");
+      }
+      navigate("/repayment/make-payment");
+    } catch (fetchError) {
+      console.error("Repayment session error:", fetchError);
+      setError("Unable to open repayment. Please verify PAN/OTP once.");
       navigate("/repayment");
-      return;
+    } finally {
+      setOpeningRepayment(false);
     }
-    navigate(
-      `/repayment/make-payment?${
-        loan.mobile
-          ? `mobile=${encodeURIComponent(loan.mobile)}`
-          : `loan_id=${encodeURIComponent(loan.loanId || "")}`
-      }`
-    );
   };
 
   const loans = data?.loans || [];
@@ -424,7 +515,23 @@ const LoanDashboard = () => {
   const displayName = latestCrmStatus?.customerName || userName;
   const cibilScore = Number(latestCrmStatus?.cibilScore || 0);
   const creditScorePercent = getCreditScorePercent(cibilScore);
-  const applicationProgress = Math.min(100, Math.max(0, Number(latestCrmStatus?.progressPercent || 42)));
+  const latestTimeline = latestCrmStatus?.timeline || [];
+  const latestTimelineIndex = latestTimeline.length ? getCurrentTimelineIndex(latestTimeline, latestCrmStatus) : -1;
+  const latestUsesTimelineProgress = Boolean(latestCrmStatus?.dashboardCurrentStageKey && latestTimeline.length);
+  const applicationProgress = Math.min(
+    100,
+    Math.max(
+      0,
+      Number(
+        latestUsesTimelineProgress
+          ? ((latestTimelineIndex + 1) / latestTimeline.length) * 100
+          : latestCrmStatus?.dashboardProgressPercent ?? latestCrmStatus?.progressPercent ?? 0
+      )
+    )
+  );
+  const showLatestNextStep =
+    !["loan_disbursed", "repayment_received"].includes(String(latestCrmStatus?.dashboardCurrentStageKey || "")) &&
+    Boolean(latestCrmStatus?.dashboardNextExpectedAction || latestCrmStatus?.nextExpectedAction);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f6f1ff_0%,#fbfaff_44%,#ffffff_100%)] px-4 py-7 font-sans text-slate-950">
@@ -453,9 +560,10 @@ const LoanDashboard = () => {
               <button
                 type="button"
                 onClick={() => openRepayment(latestLoan)}
+                disabled={openingRepayment}
                 className="flex h-10 items-center gap-2 rounded-lg bg-gradient-to-r from-[#8048e2] to-[#bd56e4] px-4 text-sm font-bold text-white shadow-[0_9px_18px_rgba(128,72,226,0.22)] transition hover:opacity-90"
               >
-                <CreditCard size={16} /> Repay
+                {openingRepayment ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />} Repay
               </button>
               <button
                 type="button"
@@ -489,10 +597,10 @@ const LoanDashboard = () => {
 
               <div>
                 <h2 className="text-lg font-bold text-[#071d3a]">
-                  {latestCrmStatus?.statusTitle || latestCrmStatus?.publicStatus || "Credit Review"}
+                  {latestCrmStatus?.dashboardStatusTitle || latestCrmStatus?.statusTitle || latestCrmStatus?.publicStatus || "Credit Review"}
                 </h2>
                 <p className="mt-4 max-w-[300px] text-sm font-medium leading-5 text-[#52657d]">
-                  {latestCrmStatus?.statusDescription || "Your profile will update as your application progresses."}
+                  {latestCrmStatus?.dashboardStatusDescription || latestCrmStatus?.statusDescription || "Your profile will update as your application progresses."}
                 </p>
                 <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#ebe3ff]">
                   <div
@@ -500,8 +608,10 @@ const LoanDashboard = () => {
                     style={{ width: `${applicationProgress}%` }}
                   />
                 </div>
-                {latestCrmStatus?.nextExpectedAction && (
-                  <p className="mt-2 text-xs font-bold text-[#8048e2]">{latestCrmStatus.nextExpectedAction}</p>
+                {showLatestNextStep && (
+                  <p className="mt-2 text-xs font-bold text-[#8048e2]">
+                    {latestCrmStatus.dashboardNextExpectedAction || latestCrmStatus.nextExpectedAction}
+                  </p>
                 )}
               </div>
             </div>
@@ -555,14 +665,50 @@ const LoanDashboard = () => {
           const outstandingAmount = Number(loan.outstandingAmount || 0);
           const paidAmount = Number(loan.paidAmount || 0);
           const interestAccrued = Number(loan.interestAccrued || 0);
+          const dueDateValue = crmStatus
+            ? formatDateTime(loan.dueDate || crmStatus.lastUpdatedAt)
+            : formatDateTime(loan.dueDate);
+          const detailCards = [
+            { icon: IndianRupee, label: "Requested Loan Amount", value: formatINR(requestedLoanAmount) },
+            { icon: ShieldCheck, label: "Approved Loan Amount", value: formatINR(approvedLoanAmount) },
+            { icon: ReceiptText, label: "Outstanding Amount", value: formatINR(outstandingAmount) },
+            { icon: CalendarDays, label: "Disbursal Date", value: formatDate(loan.disbursalDate) },
+            { icon: CalendarDays, label: loan.dueDate ? "Due Date" : "Last Updated", value: dueDateValue },
+            { icon: ReceiptText, label: "Total Repayable", value: formatINR(totalRepayableAmount) },
+            { icon: IndianRupee, label: "Paid Amount", value: formatINR(paidAmount) },
+            { icon: CalendarDays, label: "Loan Tenure", value: loan.tenureDays ? `${loan.tenureDays} days` : "-" },
+            { icon: ReceiptText, label: "Interest Rate", value: loan.interestRate ? String(loan.interestRate) : "-" },
+            { icon: IndianRupee, label: "Interest Accrued", value: formatINR(interestAccrued) },
+            ...(crmStatus?.sanction
+              ? [
+                  {
+                    icon: ReceiptText,
+                    label: "Agreement No.",
+                    value: crmStatus.sanction.agreementNumber || "-",
+                  },
+                  {
+                    icon: IndianRupee,
+                    label: "Disbursed Amount",
+                    value: formatINR(Number(crmStatus.sanction.disbursedAmount || 0)),
+                  },
+                  {
+                    icon: ShieldCheck,
+                    label: "Disbursement",
+                    value: crmStatus.disbursement?.status || "-",
+                  },
+                ]
+              : []),
+          ];
 
           return (
             <div key={loan.id} className="overflow-hidden rounded-[30px] border border-purple-100 bg-white shadow-[0_24px_80px_rgba(91,33,182,0.10)]">
               <div className="h-1 bg-gradient-to-r from-[#8048e2] via-[#bd56e4] to-[#f59e0b]" />
               <div className="px-5 py-6 sm:px-6">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-xl font-extrabold text-[#071d3a]">Loan #{loan.id}</h2>
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h2 className="min-w-0 break-words text-xl font-extrabold leading-tight text-[#071d3a] [overflow-wrap:anywhere]">
+                      Loan #{loan.id}
+                    </h2>
                     {(crmStatus?.publicStatus || crmStatus?.crmStatus) && (
                       <span className="rounded-full bg-green-50 px-3 py-1 text-sm font-bold text-green-700 ring-1 ring-green-100">
                         {crmStatus.publicStatus || crmStatus.crmStatus}
@@ -572,78 +718,26 @@ const LoanDashboard = () => {
                   <button
                     type="button"
                     onClick={() => openRepayment(loan)}
-                    className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-gradient-to-r from-[#8048e2] to-[#bd56e4] px-4 text-sm font-bold text-white shadow-[0_9px_18px_rgba(128,72,226,0.22)] transition hover:opacity-90"
+                    disabled={openingRepayment}
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#8048e2] to-[#bd56e4] px-4 text-sm font-bold text-white shadow-[0_9px_18px_rgba(128,72,226,0.22)] transition hover:opacity-90 md:w-fit"
                   >
-                    <CreditCard size={16} /> Repay
+                    {openingRepayment ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />} Repay
                   </button>
                 </div>
 
-                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-                  <InfoBox icon={IndianRupee} label="Requested Loan Amount" value={formatINR(requestedLoanAmount)} />
-                  <InfoBox icon={ShieldCheck} label="Approved Loan Amount" value={formatINR(approvedLoanAmount)} />
-                  <InfoBox icon={ReceiptText} label="Outstanding Amount" value={formatINR(outstandingAmount)} />
-                  <InfoBox icon={CalendarDays} label="Disbursal Date" value={formatDate(loan.disbursalDate)} />
+                <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  {detailCards.map((card) => (
+                    <InfoBox key={card.label} icon={card.icon} label={card.label} value={card.value} />
+                  ))}
                 </div>
-
-                {crmStatus && (
-                  <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <InfoBox
-                      icon={ShieldCheck}
-                      label="Current Stage"
-                      value={crmStatus.statusTitle || crmStatus.publicStatus || crmStatus.currentStage || "-"}
-                    />
-                    <InfoBox icon={ReceiptText} label="Loan Status" value={crmStatus.crmStatus || "-"} />
-                    <InfoBox
-                      icon={CalendarDays}
-                      label={loan.dueDate ? "Due Date" : "Last Updated"}
-                      value={formatDateTime(loan.dueDate || crmStatus.lastUpdatedAt)}
-                    />
-                  </div>
-                )}
-
-                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <InfoBox icon={ReceiptText} label="Total Repayable" value={formatINR(totalRepayableAmount)} />
-                  <InfoBox icon={IndianRupee} label="Paid Amount" value={formatINR(paidAmount)} />
-                  <InfoBox icon={CalendarDays} label="Loan Tenure" value={loan.tenureDays ? `${loan.tenureDays} days` : "-"} />
-                </div>
-
-                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <InfoBox icon={ReceiptText} label="Interest Rate" value={loan.interestRate ? String(loan.interestRate) : "-"} />
-                  <InfoBox icon={IndianRupee} label="Interest Accrued" value={formatINR(interestAccrued)} />
-                  <InfoBox
-                    icon={ShieldCheck}
-                    label="Payment Status"
-                    value={loan.status || crmStatus?.publicStatus || crmStatus?.crmStatus || "-"}
-                  />
-                </div>
-
-                {crmStatus?.sanction && (
-                  <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <InfoBox
-                      icon={ReceiptText}
-                      label="Agreement No."
-                      value={crmStatus.sanction.agreementNumber || "-"}
-                    />
-                    <InfoBox
-                      icon={IndianRupee}
-                      label="Disbursed Amount"
-                      value={formatINR(Number(crmStatus.sanction.disbursedAmount || 0))}
-                    />
-                    <InfoBox
-                      icon={ShieldCheck}
-                      label="Disbursement"
-                      value={crmStatus.disbursement?.status || "-"}
-                    />
-                  </div>
-                )}
 
                 {crmStatus?.statusDescription && (
                   <div className="mt-5 rounded-2xl border border-green-100 bg-green-50 px-4 py-4">
                     <p className="text-sm font-extrabold text-green-800">
-                      {crmStatus.statusTitle || crmStatus.publicStatus || "Application status"}
+                      {crmStatus.dashboardStatusTitle || crmStatus.statusTitle || crmStatus.publicStatus || "Application status"}
                     </p>
                     <p className="mt-1 text-sm font-semibold leading-5 text-green-700">
-                      {crmStatus.statusDescription}
+                      {crmStatus.dashboardStatusDescription || crmStatus.statusDescription}
                     </p>
                   </div>
                 )}

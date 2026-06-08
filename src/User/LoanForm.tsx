@@ -91,9 +91,9 @@ const LoanForm = () => {
       alert("Loan applied successfully!");
       navigate("/user/basic-details");
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      alert(err.message || "Server not reachable");
+      alert(err instanceof Error ? err.message : "Server not reachable");
     } finally {
       setLoading(false);
     }

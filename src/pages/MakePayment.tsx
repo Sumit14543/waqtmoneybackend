@@ -21,7 +21,8 @@ import Navbar from "@/Components/Navbar";
 import Footer from "@/Components/Footer";
 
 import { API_BASE_URL } from "@/config/api";
-const CASHFREE_SDK_URL = "https://sdk.cashfree.com/js/v3/cashfree.js";
+const CASHFREE_SDK_URL =
+  import.meta.env.VITE_CASHFREE_SDK_URL || "https://sdk.cashfree.com/js/v3/cashfree.js";
 
 declare global {
   interface Window {
@@ -57,6 +58,12 @@ type Application = {
   interest_rate?: number | string;
   interest_accrued?: number | string;
   repayment_source?: string;
+};
+
+const hasMeaningfulValue = (value: unknown) => {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "number") return Number.isFinite(value) && value > 0;
+  return String(value).trim() !== "";
 };
 
 const readJsonResponse = async (res: Response) => {
@@ -106,8 +113,8 @@ const getStoredRepaymentLoanId = () =>
 const getStoredRepaymentMobile = () =>
   sessionStorage.getItem("repaymentMobile") || "";
 
-const getStoredRepaymentAccessToken = () =>
-  sessionStorage.getItem("repaymentAccessToken") || "";
+const normalizeRepaymentMobile = (value: string) =>
+  value.replace(/\D/g, "").slice(-10);
 
 const loadCashfreeSdk = () =>
   new Promise<void>((resolve, reject) => {
@@ -143,23 +150,37 @@ const MakePayment = () => {
   const [error, setError] = useState("");
   const [showReloanOffer, setShowReloanOffer] = useState(false);
 
-  const queryParams = new URLSearchParams(window.location.search);
+  const queryParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const returnedOrderId = queryParams.get("order_id") || "";
   const rawReturnedLoanId = queryParams.get("loan_id") || "";
   const loanIdIsApplicationId = isApplicationStyleId(rawReturnedLoanId);
   const returnedApplicationId = queryParams.get("application_id") || (loanIdIsApplicationId ? rawReturnedLoanId : "");
   const returnedLoanId = isRealLoanId(rawReturnedLoanId) ? rawReturnedLoanId : "";
-  const returnedMobile = queryParams.get("mobile") || "";
+  const returnedMobile = normalizeRepaymentMobile(queryParams.get("mobile") || "");
   const applicationId = returnedApplicationId || getStoredRepaymentApplicationId();
   const repaymentLoanId = returnedLoanId || getStoredRepaymentLoanId();
-  const repaymentMobile = returnedMobile || getStoredRepaymentMobile();
-  const repaymentLookupId = repaymentMobile || repaymentLoanId || applicationId;
-  const repaymentAccessToken = getStoredRepaymentAccessToken();
+  const storedRepaymentMobile = normalizeRepaymentMobile(getStoredRepaymentMobile());
+  const repaymentLookupId = storedRepaymentMobile || repaymentLoanId || applicationId;
+  const hasVerifiedRepaymentSession = Boolean(application);
   const invalidReturnedLoanId = Boolean(
     rawReturnedLoanId && !isRealLoanId(rawReturnedLoanId) && !loanIdIsApplicationId
   );
 
   useEffect(() => {
+    if (returnedMobile) {
+      const params = new URLSearchParams(window.location.search);
+      params.delete("mobile");
+
+      sessionStorage.setItem("repaymentMobile", returnedMobile);
+
+      if (params.toString()) {
+        navigate(`/repayment/make-payment?${params.toString()}`, { replace: true });
+      } else {
+        navigate("/repayment/make-payment", { replace: true });
+      }
+      return;
+    }
+
     if (loanIdIsApplicationId) {
       sessionStorage.setItem("repaymentApplicationId", rawReturnedLoanId);
       sessionStorage.removeItem("repaymentLoanId");
@@ -173,13 +194,7 @@ const MakePayment = () => {
 
     if (invalidReturnedLoanId) {
       sessionStorage.removeItem("repaymentLoanId");
-      const storedMobile = returnedMobile || getStoredRepaymentMobile();
-      navigate(
-        storedMobile
-          ? `/repayment/make-payment?mobile=${encodeURIComponent(storedMobile)}`
-          : "/repayment",
-        { replace: true }
-      );
+      navigate("/repayment", { replace: true });
       return;
     }
 
@@ -191,9 +206,6 @@ const MakePayment = () => {
     } else if (queryParams.get("loan_id") && !isRealLoanId(queryParams.get("loan_id"))) {
       sessionStorage.removeItem("repaymentLoanId");
     }
-    if (returnedMobile) {
-      sessionStorage.setItem("repaymentMobile", returnedMobile);
-    }
   }, [
     invalidReturnedLoanId,
     loanIdIsApplicationId,
@@ -202,6 +214,8 @@ const MakePayment = () => {
     returnedApplicationId,
     returnedLoanId,
     returnedMobile,
+    hasVerifiedRepaymentSession,
+    queryParams,
   ]);
 
   const loadApplication = async (showLoader = true) => {
@@ -215,7 +229,9 @@ const MakePayment = () => {
     setError("");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/application/repayment/details/${encodeURIComponent(repaymentLookupId)}`);
+      const response = await fetch(`${API_BASE_URL}/application/repayment/details/${encodeURIComponent(repaymentLookupId)}`, {
+        credentials: "include",
+      });
       const result = await readJsonResponse(response);
 
       if (!response.ok) {
@@ -245,6 +261,8 @@ const MakePayment = () => {
 
   useEffect(() => {
     loadApplication();
+    // Reload when the resolved lookup id changes; loadApplication closes over the latest state setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repaymentLookupId]);
 
   const loadPaymentStatus = async (orderId: string) => {
@@ -253,7 +271,9 @@ const MakePayment = () => {
       setPaymentStatus("Checking payment status...");
 
       try {
-        const response = await fetch(`${API_BASE_URL}/application/repayment/payment-status/${orderId}`);
+        const response = await fetch(`${API_BASE_URL}/application/repayment/payment-status/${orderId}`, {
+          credentials: "include",
+        });
         const result = await readJsonResponse(response);
 
         if (!response.ok) {
@@ -302,6 +322,8 @@ const MakePayment = () => {
     if (!returnedOrderId) return;
 
     loadPaymentStatus(returnedOrderId);
+    // Check the returned Cashfree order once for the current URL order id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [returnedOrderId]);
 
   const repayment = useMemo(() => {
@@ -310,8 +332,8 @@ const MakePayment = () => {
     const dueDateValue = application?.repayment_due_date || application?.due_date || "";
     const dueDate = dueDateValue ? new Date(dueDateValue) : null;
     const validDueDate = dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
-    const tenureDays = Number(application?.tenure_days || 0);
-    const interestAccrued = Number(application?.interest_accrued || 0);
+    const tenureDays = hasMeaningfulValue(application?.tenure_days) ? Number(application?.tenure_days) : null;
+    const interestAccrued = hasMeaningfulValue(application?.interest_accrued) ? Number(application?.interest_accrued) : null;
     const totalRepayableAmount = Number(application?.total_repayable_amount || application?.maturity_amount || 0);
     const paidAmount = Number(application?.paid_amount || application?.repayment_paid_amount || 0);
     const isPaid =
@@ -340,9 +362,9 @@ const MakePayment = () => {
       customerName: application?.full_name || "Customer",
       loanAmount: safeLoanAmount,
       dueDate: validDueDate,
-      tenureDays: Number.isFinite(tenureDays) && tenureDays > 0 ? tenureDays : 0,
-      interestRate: application?.interest_rate || "",
-      interestAccrued: Number.isFinite(interestAccrued) ? interestAccrued : 0,
+      tenureDays: Number.isFinite(Number(tenureDays)) && Number(tenureDays) > 0 ? Number(tenureDays) : null,
+      interestRate: hasMeaningfulValue(application?.interest_rate) ? application?.interest_rate : "",
+      interestAccrued: Number.isFinite(Number(interestAccrued)) && Number(interestAccrued) > 0 ? Number(interestAccrued) : null,
       outstandingToday,
       maturityAmount,
       paidAmount: Number.isFinite(Number(paidAmount)) ? Number(paidAmount) : 0,
@@ -362,17 +384,17 @@ const MakePayment = () => {
     ["Loan ID", repayment.loanId],
     ["Repayment Due Date", repayment.dueDate ? formatDate(repayment.dueDate) : "-"],
     ["Loan Amount", formatINR(repayment.loanAmount)],
-    ["Loan Tenure", repayment.tenureDays > 0 ? `${repayment.tenureDays} days` : "-"],
+    ["Loan Tenure", repayment.tenureDays ? `${repayment.tenureDays} days` : "-"],
     ["Interest Rate", repayment.interestRate ? String(repayment.interestRate) : "-"],
-    ["Interest Accrued", repayment.interestAccrued > 0 ? formatINR(repayment.interestAccrued) : "-"],
+    ["Interest Accrued", repayment.interestAccrued ? formatINR(repayment.interestAccrued) : "-"],
     ["Paid Amount", repayment.paidAmount > 0 ? formatINR(repayment.paidAmount) : "-"],
   ];
 
   const handlePayment = async () => {
     if (creatingPayment || loading) return;
 
-    if (!repaymentAccessToken) {
-      setError("Repayment session expired. Please verify your PAN again.");
+    if (!application) {
+      setError("Please verify PAN/OTP first to start payment securely.");
       return;
     }
 
@@ -393,13 +415,16 @@ const MakePayment = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/application/repayment/create-payment-order`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           paymentType,
+          repaymentLookupId,
+          applicationId: application?.application_id || "",
+          loanId: isRealLoanId(application?.loan_id) ? application?.loan_id : "",
           ...(paymentType === "part" ? { amount: repayment.payableAmount } : {}),
-          repaymentAccessToken,
         }),
       });
       const result = await readJsonResponse(response);
@@ -486,6 +511,30 @@ const MakePayment = () => {
               {paymentStatus && (
                 <div className="mb-5 rounded-2xl border border-green-100 bg-green-50 px-4 py-3 text-sm font-bold text-green-700">
                   {paymentStatus}
+                </div>
+              )}
+
+              {!loading && application && !hasVerifiedRepaymentSession && (
+                <div className="mb-5 rounded-2xl border border-orange-100 bg-orange-50 px-4 py-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-start gap-3">
+                      <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-orange-600" />
+                      <div>
+                        <p className="text-sm font-black text-slate-950">Verify before payment</p>
+                        <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                          Repayment details are loaded for this mobile number. Please verify PAN/OTP once to open secure checkout.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/repayment")}
+                      className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 text-sm font-black text-white transition hover:bg-purple-700"
+                    >
+                      Verify Now
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -612,7 +661,7 @@ const MakePayment = () => {
                   <button
                     type="button"
                     onClick={handlePayment}
-                    disabled={creatingPayment || repayment.outstandingToday <= 0 || repayment.payableAmount <= 0}
+                    disabled={creatingPayment || repayment.outstandingToday <= 0 || repayment.payableAmount <= 0 || !hasVerifiedRepaymentSession}
                     className="mt-5 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-purple-600 text-base font-black text-white shadow-lg shadow-purple-100 transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                   >
                     {creatingPayment ? (
@@ -622,7 +671,11 @@ const MakePayment = () => {
                       </>
                     ) : (
                       <>
-                        {repayment.outstandingToday <= 0 ? "No Dues" : `Pay ${paymentType === "full" ? formatINR(repayment.outstandingToday) : "Now"}`}
+                        {!hasVerifiedRepaymentSession
+                          ? "Verify to Pay"
+                          : repayment.outstandingToday <= 0
+                            ? "No Dues"
+                            : `Pay ${paymentType === "full" ? formatINR(repayment.outstandingToday) : "Now"}`}
                         <ArrowRight className="h-5 w-5" />
                       </>
                     )}

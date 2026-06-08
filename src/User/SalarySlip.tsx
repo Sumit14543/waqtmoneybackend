@@ -109,6 +109,7 @@ const SalarySlip = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/application/upload-docs`, {
         method: "POST",
+        credentials: "include",
         body: formData,
       });
       const result = await readJsonResponse(response);

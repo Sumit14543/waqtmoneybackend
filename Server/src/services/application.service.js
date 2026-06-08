@@ -1,6 +1,7 @@
 import db from "../configs/db.js";
 import mysql from "mysql2/promise";
 import { fetchUanByMobile } from "./uan.service.js";
+import logger from "../utils/logger.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
 const LEGACY_APPLICATION_TABLE = "loan_applications";
@@ -279,7 +280,7 @@ const getLegacyUanByApplicationId = async (applicationId) => {
   if (!legacyDb) return "";
 
   return getLegacyUanFromConnection(legacyDb, applicationId).catch((error) => {
-    console.error("External legacy UAN lookup error:", error.message);
+    logger.error("External legacy UAN lookup error:", error.message);
     return "";
   });
 };
@@ -361,12 +362,12 @@ export const saveApplicationUanById = async (id, uanNumber) => {
   }
 
   const verifiedUan = await fetchUanByMobile(application.mobile).catch((error) => {
-    console.error("UAN verification lookup error:", error.message);
+    logger.error("UAN verification lookup error:", error.message);
     return "";
   });
 
   if (!verifiedUan || verifiedUan !== normalizedUan) {
-    console.warn("Rejected unverified UAN save attempt", {
+    logger.warn("Rejected unverified UAN save attempt", {
       applicationId: application.application_id || application.id,
       hasProviderUan: Boolean(verifiedUan),
       matchedProvider: verifiedUan === normalizedUan,
@@ -400,7 +401,7 @@ const syncApplicationUan = async (application, lookupId) => {
   const applicationId = lookupId || application.application_id || application.id;
 
   const uanNumber = await fetchUanByMobile(application.mobile).catch((error) => {
-    console.error("UAN lookup error:", error);
+    logger.error("UAN lookup error:", error);
     return "";
   });
 
@@ -441,7 +442,7 @@ export const updateApplication = async (id, data) => {
     delete data.uan_number;
     delete data.uanNumber;
     await getApplicationUanById(id).catch((error) => {
-      console.error("UAN sync during application update failed:", error.message);
+      logger.error("UAN sync during application update failed:", error.message);
       return "";
     });
   }
@@ -596,7 +597,7 @@ export const getApplicationUanById = async (id) => {
 
   const existingUanNumber = normalizeUanNumber(application.uan_number);
   const providerUanNumber = await fetchUanByMobile(application.mobile).catch((error) => {
-    console.error("UAN lookup error:", error.message);
+    logger.error("UAN lookup error:", error.message);
     return "";
   });
 
@@ -919,12 +920,12 @@ export const createApplication = async (data) => {
   let uanNumber = "";
   if (process.env.UAN_LOOKUP_SYNC_ON_APPLY === "true") {
     uanNumber = await getApplicationUanById(applicationId).catch((error) => {
-      console.error("UAN lookup error:", error);
+      logger.error("UAN lookup error:", error);
       return "";
     });
   } else if (process.env.UAN_LOOKUP_BACKGROUND_ON_APPLY === "true") {
     setTimeout(() => getApplicationUanById(applicationId).catch((error) => {
-      console.error("Background UAN lookup error:", error.message);
+      logger.error("Background UAN lookup error:", error.message);
     }), 0);
   }
 

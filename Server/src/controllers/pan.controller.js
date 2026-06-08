@@ -1,4 +1,9 @@
 import db from "../configs/db.js";
+import {
+  INDIA_POST_PINCODE_API_URL,
+  PAN_DETAILS_API_URL,
+  PINCODES_INFO_API_URL,
+} from "../configs/integrations.js";
 import { getApplicationUanById, saveApplicationUanById } from "../services/application.service.js";
 import { extractUanNumber, fetchUanByMobile } from "../services/uan.service.js";
 import logger from "../utils/logger.js";
@@ -380,7 +385,7 @@ export const verifyPan = async (req, res) => {
       });
     }
 
-    const apiRes = await fetch("https://bifrost.unifers.ai/enrich/get-pan-details", {
+    const apiRes = await fetch(PAN_DETAILS_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -533,7 +538,7 @@ export const getCityByPincode = async (req, res) => {
       .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
 
   const fetchIndiaPostPincode = async () => {
-    const response = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+    const response = await fetch(`${INDIA_POST_PINCODE_API_URL}/${pincode}`);
     const data = await response.json();
 
     if (data?.[0]?.Status === "Success" && data[0].PostOffice?.length) {
@@ -549,7 +554,7 @@ export const getCityByPincode = async (req, res) => {
   };
 
   const fetchPincodesInfo = async () => {
-    const response = await fetch(`https://pincodesinfo.in/api/pincode/${pincode}`);
+    const response = await fetch(`${PINCODES_INFO_API_URL}/${pincode}`);
     const data = await response.json();
     const result = data?.results?.[0];
 

@@ -1,7 +1,7 @@
 import logger from "../utils/logger.js";
 
 export const errorHandler = (err, req, res, next) => {
-  const isProduction = process.env.NODE_ENV === "production";
+  const isProduction = process.env.NODE_ENV === "production" || process.env.APP_ENV === "production";
   logger.error("Error:", isProduction ? err.message : err);
 
   const isDbConnectionError =
@@ -11,13 +11,19 @@ export const errorHandler = (err, req, res, next) => {
 
   const statusCode = isDbConnectionError ? 503 : err.statusCode || err.status || 500;
 
+  const productionMessage =
+    statusCode >= 500
+      ? "Something went wrong. Please try again shortly."
+      : err.message || "Something went wrong";
   const response = {
     success: false,
     message: isDbConnectionError
       ? isProduction
         ? "Service temporarily unavailable. Please try again shortly."
         : "Database is not reachable. Please start MySQL and try again."
-      : err.message || "Something went wrong",
+      : isProduction
+        ? productionMessage
+        : err.message || "Something went wrong",
   };
 
   if (err.details && !isProduction) {

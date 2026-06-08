@@ -110,3 +110,50 @@
     box-shadow: var(--card-shadow-hover);
   }
 }
+
+.login-finance-grid {
+  background-image:
+    linear-gradient(to right, rgb(126 34 206 / 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(249 115 22 / 0.08) 1px, transparent 1px);
+  background-size: 34px 34px;
+  -webkit-mask-image: radial-gradient(circle at center, black 0%, transparent 74%);
+  mask-image: radial-gradient(circle at center, black 0%, transparent 74%);
+}
+
+.skeleton-block {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #f0e8ff 0%, #f7f3ff 100%);
+}
+
+.skeleton-block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 0%, rgb(255 255 255 / 0.82) 44%, transparent 74%);
+  transform: translateX(-115%);
+  animation: page-loader-sheen 1.55s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.page-loader-screen {
+  animation: skeleton-page-in 0.22s ease-out both;
+}
+
+@keyframes skeleton-page-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes page-loader-sheen {
+  0%,
+  28% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
