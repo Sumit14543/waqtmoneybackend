@@ -75,9 +75,10 @@ const saveOtpForKey = (key, otp, expires) => {
   otpStore[key] = { otps: activeOtps };
 };
 
-const withTimeout = (promise, timeoutMs) =>
+const withTimeout = (promise, timeoutMs, onTimeout) =>
   new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
+      onTimeout?.();
       const timeoutError = new Error("OTP delivery request timed out");
       timeoutError.statusCode = 504;
       reject(timeoutError);
@@ -117,7 +118,12 @@ const sendWhatsAppOtp = async (phone, otp) => {
     "1": String(otp),
   }).toString()}`;
 
-  const response = await withTimeout(fetch(url), WHATSAPP_TIMEOUT_MS);
+  const controller = new AbortController();
+  const response = await withTimeout(
+    fetch(url, { signal: controller.signal }),
+    WHATSAPP_TIMEOUT_MS,
+    () => controller.abort(),
+  );
   const text = await response.text();
 
   if (!response.ok) {
