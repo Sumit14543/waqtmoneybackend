@@ -28,6 +28,13 @@ const getWhatsAppAuthKey = () =>
     process.env.WHATSAPP_AUTH_KEY
   )?.trim();
 
+const isSmtpConfigured = () => {
+  const host = process.env.SMTP_HOST?.trim();
+  const user = (process.env.SMTP_USER || process.env.SMTP_USERNAME)?.trim();
+  const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD)?.trim();
+  return Boolean(host && user && pass);
+};
+
 const isLocalOtpDebugEnabled = () =>
   process.env.NODE_ENV !== "production" ||
   String(process.env.CLIENT_BASE_URL || "").includes("localhost") ||
@@ -236,12 +243,16 @@ export const sendOTPService = async ({ phone, email }) => {
     }
   }
 
-  try {
-    await sendEmailOtp(email, otp);
-    channels.push("Email");
-  } catch (error) {
-    warnings.push(`Email failed: ${error.message}`);
-    logger.warn("Email OTP failed:", error.message);
+  if (email && isSmtpConfigured()) {
+    try {
+      await sendEmailOtp(email, otp);
+      channels.push("Email");
+    } catch (error) {
+      warnings.push(`Email failed: ${error.message}`);
+      logger.warn("Email OTP failed:", error.message);
+    }
+  } else if (email && !isSmtpConfigured()) {
+    logger.warn("Email OTP skipped: SMTP not configured");
   }
 
   if (channels.length === 0) {
