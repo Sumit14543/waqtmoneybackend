@@ -1,23 +1,67 @@
-import "./src/configs/env.js";
-import app from "./src/app.js";
-import transporter from "./src/configs/mailer.js";
-import logger from "./src/utils/logger.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const PORT = Number.parseInt(process.env.PORT || "5000", 10);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const startupLogPath = path.join(__dirname, "startup-error.log");
 
-const startServer = () => {
-  app.listen(PORT, () => {
-    logger.info(`Server running on port ${PORT}`);
-  });
+const formatStartupError = (error) => {
+  if (!error) return "Unknown startup error";
+  return error.stack || error.message || String(error);
+};
 
-  transporter
-    .verify()
-    .then(() => {
-      logger.info("SMTP transport verified.");
-    })
-    .catch((error) => {
-      logger.error("SMTP verification failed:", error.message);
+const writeStartupError = (label, error) => {
+  const line = [
+    `\n[${new Date().toISOString()}] ${label}`,
+    formatStartupError(error),
+  ].join("\n");
+
+  try {
+    fs.appendFileSync(startupLogPath, `${line}\n`, "utf8");
+  } catch {
+    // If the host blocks file writes, keep the original stderr output available.
+  }
+
+  console.error(line);
+};
+
+process.on("uncaughtException", (error) => {
+  writeStartupError("uncaughtException", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  writeStartupError("unhandledRejection", reason);
+});
+
+const startServer = async () => {
+  try {
+    await import("./src/configs/env.js");
+
+    const [{ default: app }, { default: transporter }, { default: logger }] = await Promise.all([
+      import("./src/app.js"),
+      import("./src/configs/mailer.js"),
+      import("./src/utils/logger.js"),
+    ]);
+
+    const PORT = Number.parseInt(process.env.PORT || "5000", 10);
+
+    app.listen(PORT, () => {
+      logger.info(`Server running on port ${PORT}`);
     });
+
+    transporter
+      .verify()
+      .then(() => {
+        logger.info("SMTP transport verified.");
+      })
+      .catch((error) => {
+        logger.error("SMTP verification failed:", error.message);
+      });
+  } catch (error) {
+    writeStartupError("startup failed", error);
+    process.exitCode = 1;
+  }
 };
 
 startServer();

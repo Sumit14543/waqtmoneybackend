@@ -11,6 +11,7 @@ const listFromEnv = (value, fallback = []) => {
 export const PRODUCTION_WEB_ORIGINS = listFromEnv(process.env.PRODUCTION_WEB_ORIGINS, [
   "https://waqtmoney.com",
   "https://www.waqtmoney.com",
+  "https://waqt-testing.waqtmoney.com",
 ]);
 export const LOCAL_WEB_ORIGINS = listFromEnv(process.env.LOCAL_WEB_ORIGINS, [
   "http://localhost:8080",
