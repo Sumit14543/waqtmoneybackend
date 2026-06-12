@@ -522,6 +522,50 @@ export const verifyPan = async (req, res) => {
   }
 };
 
+export const skipPanVerification = async (req, res) => {
+  const applicationId = req.body.applicationId || req.body.id || null;
+
+  if (!applicationId) {
+    return res.status(400).json({
+      success: false,
+      message: "Application session not found. Please start application again.",
+    });
+  }
+
+  try {
+    const lookup = buildApplicationLookup(applicationId);
+    const [result] = await db.execute(
+      `UPDATE ${APPLICATION_TABLE}
+       SET current_step = 'pan_verify',
+           last_activity_at = NOW()
+       WHERE ${lookup.clause}`,
+      lookup.values
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Application not found in local database. Please start a fresh application.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      status: "success",
+      message: "PAN verification skipped temporarily",
+      data: {
+        nextPath: "/user/kyc-aadhaar",
+      },
+    });
+  } catch (error) {
+    logger.error("PAN skip error:", error.message);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode ? error.message : "Failed to skip PAN verification",
+    });
+  }
+};
+
 export const getCityByPincode = async (req, res) => {
   const pincode = String(req.body.pincode || "").replace(/\D/g, "").slice(0, 6);
   if (!pincode) {

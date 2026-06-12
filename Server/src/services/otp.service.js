@@ -8,8 +8,8 @@ const OTP_TTL_MS = 60 * 1000;
 const MAX_ACTIVE_OTPS_PER_KEY = 5;
 const MAX_ATTEMPTS = 5;
 const BLOCK_DURATION_MS = 15 * 60 * 1000;
-const MAIL_TIMEOUT_MS = 15000;
-const WHATSAPP_TIMEOUT_MS = 15000;
+const MAIL_TIMEOUT_MS = Number.parseInt(process.env.OTP_MAIL_TIMEOUT_MS || "8000", 10);
+const WHATSAPP_TIMEOUT_MS = Number.parseInt(process.env.OTP_WHATSAPP_TIMEOUT_MS || "8000", 10);
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
 const normalizePhone = (phone) => {
@@ -110,6 +110,8 @@ const sendWhatsAppOtp = async (phone, otp) => {
     ? normalizedPhone.slice(2)
     : normalizedPhone;
 
+  logger.info("WhatsApp OTP request started");
+
   const url = `https://api.authkey.io/request?${new URLSearchParams({
     authkey: authKey,
     mobile,
@@ -122,7 +124,10 @@ const sendWhatsAppOtp = async (phone, otp) => {
   const response = await withTimeout(
     fetch(url, { signal: controller.signal }),
     WHATSAPP_TIMEOUT_MS,
-    () => controller.abort(),
+    () => {
+      logger.warn("WhatsApp OTP request timed out");
+      controller.abort();
+    },
   );
   const text = await response.text();
 
@@ -145,6 +150,7 @@ const sendWhatsAppOtp = async (phone, otp) => {
     throw error;
   }
 
+  logger.info("WhatsApp OTP request accepted");
   return true;
 };
 
@@ -163,6 +169,8 @@ const sendEmailOtp = async (email, otp) => {
     process.env.SMTP_USER ||
     process.env.SMTP_USERNAME;
   const fromName = process.env.SMTP_FROM_NAME || "Waqt Finance";
+
+  logger.info("Email OTP request started");
 
   const info = await withTimeout(
     transporter.sendMail({
@@ -186,6 +194,7 @@ const sendEmailOtp = async (email, otp) => {
   );
 
   if (info.accepted?.length > 0) {
+    logger.info("Email OTP request accepted");
     return true;
   }
 
@@ -235,31 +244,54 @@ export const sendOTPService = async ({ phone, email }) => {
   const channels = [];
   const warnings = [];
 
+  logger.info("OTP delivery started", {
+    hasPhone: Boolean(phone),
+    hasEmail: Boolean(email),
+    hasWhatsAppAuthKey: Boolean(getWhatsAppAuthKey()),
+  });
+
   getOtpKeys({ phone, email }).forEach((key) => {
     saveOtpForKey(key, otp, now + OTP_TTL_MS);
   });
 
+  const deliveryTasks = [];
+
   if (phone && getWhatsAppAuthKey()) {
-    try {
-      await sendWhatsAppOtp(phone, otp);
-      channels.push("WhatsApp");
-    } catch (error) {
-      warnings.push(`WhatsApp failed: ${error.message}`);
-      logger.warn("WhatsApp OTP failed:", error.message);
-    }
+    deliveryTasks.push({
+      channel: "WhatsApp",
+      send: () => sendWhatsAppOtp(phone, otp),
+    });
   }
 
   if (email && isSmtpConfigured()) {
-    try {
-      await sendEmailOtp(email, otp);
-      channels.push("Email");
-    } catch (error) {
-      warnings.push(`Email failed: ${error.message}`);
-      logger.warn("Email OTP failed:", error.message);
-    }
+    deliveryTasks.push({
+      channel: "Email",
+      send: () => sendEmailOtp(email, otp),
+    });
   } else if (email && !isSmtpConfigured()) {
     logger.warn("Email OTP skipped: SMTP not configured");
   }
+
+  const results = await Promise.allSettled(
+    deliveryTasks.map(({ send }) => send()),
+  );
+
+  logger.info("OTP delivery tasks settled", {
+    taskCount: deliveryTasks.length,
+  });
+
+  results.forEach((result, index) => {
+    const channel = deliveryTasks[index]?.channel || "OTP";
+
+    if (result.status === "fulfilled") {
+      channels.push(channel);
+      return;
+    }
+
+    const message = result.reason?.message || "Delivery failed";
+    warnings.push(`${channel} failed: ${message}`);
+    logger.warn(`${channel} OTP failed:`, message);
+  });
 
   if (channels.length === 0) {
     getOtpKeys({ phone, email }).forEach((key) => {

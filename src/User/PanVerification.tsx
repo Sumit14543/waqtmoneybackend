@@ -25,6 +25,7 @@ const PanVerification = () => {
   const [gender, setGender] = useState("");
   const [errors, setErrors] = useState<PanErrors>({});
   const [loading, setLoading] = useState(false);
+  const [skipLoading, setSkipLoading] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
 
@@ -79,6 +80,8 @@ const PanVerification = () => {
     findValueByKeys(result, ["gender", "gender_name", "genderName", "sex"]);
 
   useEffect(() => {
+    if (skipLoading) return;
+
     if (pan.length === 10 && panRegex.test(pan)) {
       setLoading(true);
       setErrors({});
@@ -142,7 +145,7 @@ const PanVerification = () => {
     }
     // Auto-verifies once the PAN reaches a valid 10-character shape.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pan]);
+  }, [pan, skipLoading]);
 
   const handlePanChange = (value: string) => {
     let input = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -187,6 +190,70 @@ const PanVerification = () => {
   const handleConfirmPan = () => {
     if (!validate()) return;
     navigate("/user/kyc-aadhaar");
+  };
+
+  const readJsonResponse = async (res: Response) => {
+    const text = await res.text();
+
+    if (!text) return {};
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { message: "Server returned an invalid response" };
+    }
+  };
+
+  const handleSkipPan = async () => {
+    if (loading || skipLoading) return;
+
+    const applicationId = getApplicationId();
+
+    if (!applicationId) {
+      setErrors((prev) => ({
+        ...prev,
+        submit: "Application session not found. Please start again.",
+      }));
+      return;
+    }
+
+    sessionStorage.setItem("applicationId", applicationId);
+    localStorage.setItem("applicationId", applicationId);
+    sessionStorage.setItem("panVerificationSkipped", "true");
+    sessionStorage.removeItem("panVerification");
+
+    setSkipLoading(true);
+    setErrors({});
+    setShowConfirmation(false);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/pan/skip`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: applicationId,
+        }),
+      });
+
+      const result = await readJsonResponse(response);
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Failed to skip PAN verification");
+      }
+
+      navigate(result.data?.nextPath || "/user/kyc-aadhaar");
+    } catch (error) {
+      console.error("PAN skip error:", error);
+      setErrors((prev) => ({
+        ...prev,
+        submit: error instanceof Error ? error.message : "Failed to skip PAN verification",
+      }));
+    } finally {
+      setSkipLoading(false);
+    }
   };
 
   return (
@@ -235,7 +302,7 @@ const PanVerification = () => {
                     maxLength={10}
                     placeholder="ABCDE1234F"
                     className="mt-2 h-[52px] w-full rounded-lg border border-[#d8c5ff] px-4 text-sm font-semibold uppercase text-[#071d3a] outline-none focus:border-[#8048e2]"
-                    readOnly={loading}
+                    readOnly={loading || skipLoading}
                   />
 
                   {errors.pan && <p className="mt-1 text-sm text-red-500">{errors.pan}</p>}
@@ -276,6 +343,15 @@ const PanVerification = () => {
               </div>
 
               {errors.submit && <p className="mt-3 text-left text-sm text-red-500">{errors.submit}</p>}
+
+              <button
+                type="button"
+                onClick={handleSkipPan}
+                disabled={loading || skipLoading}
+                className="mt-5 h-[48px] w-full rounded-lg border border-[#d8c5ff] bg-white text-sm font-bold text-[#8048e2] transition hover:bg-[#f8f3ff] disabled:opacity-60"
+              >
+                {skipLoading ? "Skipping..." : "Skip for now"}
+              </button>
             </div>
 
             <div className="flex items-center justify-center gap-2 border-t border-[#dfe7f2] bg-[#f8fafc] px-6 py-4 text-xs font-semibold text-[#52657d]">

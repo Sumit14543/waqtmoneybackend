@@ -752,6 +752,7 @@ export const login = async (req, res) => {
 export const sendLoginOtp = async (req, res, next) => {
   try {
     const mobile = normalizeMobile(req.body.mobile || req.body.phone);
+    console.log("Login OTP request received", { hasMobile: Boolean(mobile) });
 
     if (!/^[6-9]\d{9}$/.test(mobile)) {
       return res.status(400).json({
@@ -761,6 +762,7 @@ export const sendLoginOtp = async (req, res, next) => {
     }
 
     const result = await sendOTPService({ phone: mobile });
+    console.log("Login OTP request completed", { channels: result.channels });
     return res.status(200).json({
       success: true,
       message: "OTP sent",
