@@ -45,7 +45,7 @@ jobs:
           -i ~/.ssh/deploy_key \
           -o StrictHostKeyChecking=no \
           waqtmoney@103.234.185.16 "
-            cd /home/waqtmoney/repositories/waqt-testing-api &&
+            cd /home/waqtmoney/public_html/waqt-testing-api/ &&
             npm install &&
             nohup npm start > app.log 2>&1 &
           "
