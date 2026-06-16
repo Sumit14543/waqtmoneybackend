@@ -107,14 +107,18 @@ export const applyLoan = async (req, res, next) => {
       mobile: result.phone,
     });
 
+    const responseApplicationId = result.applicationId || result.application_id || result.id;
+
     res.status(200).json({
       success: true,
       message: "Application submitted",
       id: result.id,
-      applicationId: result.applicationId || result.application_id || result.id,
-      application_id: result.application_id || result.applicationId || result.id,
+      applicationId: responseApplicationId,
+      application_id: responseApplicationId,
       data: {
         ...result,
+        applicationId: responseApplicationId,
+        application_id: responseApplicationId,
       },
     });
 
