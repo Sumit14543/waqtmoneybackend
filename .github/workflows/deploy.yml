@@ -1,4 +1,4 @@
-name: Deploy Backend to cPanel
+name: Deploy waqtbackend to cPanel 
 
 on:
   push:
