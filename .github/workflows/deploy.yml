@@ -1,0 +1,51 @@
+name: Deploy Backend to cPanel
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: backend-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.CPANEL_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Test SSH Connection
+        run: |
+          ssh -p 5726 \
+          -i ~/.ssh/deploy_key \
+          -o StrictHostKeyChecking=no \
+          waqtmoney@103.234.185.16 "echo Connected Successfully"
+
+      - name: Deploy Backend Files
+        run: |
+          rsync -avz --delete \
+          --exclude=node_modules \
+          --exclude=.git \
+          -e "ssh -p 5726 -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+          ./ \
+          waqtmoney@103.234.185.16:/home/waqtmoney/waqt-testing-api/
+
+      - name: Install Dependencies and Restart App
+        run: |
+          ssh -p 5726 \
+          -i ~/.ssh/deploy_key \
+          -o StrictHostKeyChecking=no \
+          waqtmoney@103.234.185.16 "
+            cd /home/waqtmoney/waqt-testing-api &&
+            npm install &&
+            pm2 restart all
+          "
