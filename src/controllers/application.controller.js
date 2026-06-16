@@ -110,6 +110,8 @@ export const applyLoan = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: "Application submitted",
+      applicationId: result.applicationId || result.application_id || result.id,
+      application_id: result.application_id || result.applicationId || result.id,
       data: result,
     });
 
