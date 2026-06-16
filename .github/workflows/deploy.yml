@@ -39,7 +39,7 @@ jobs:
           ./ \
           waqtmoney@103.234.185.16:/home/waqtmoney/waqt-testing-api/
 
-      - name: Install Dependencies and Restart App
+      - name: Install Dependencies and Start App
         run: |
           ssh -p 5726 \
           -i ~/.ssh/deploy_key \
@@ -47,5 +47,5 @@ jobs:
           waqtmoney@103.234.185.16 "
             cd /home/waqtmoney/waqt-testing-api &&
             npm install &&
-            pm2 restart all
+            nohup npm start > app.log 2>&1 &
           "
