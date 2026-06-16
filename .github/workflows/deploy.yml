@@ -37,7 +37,7 @@ jobs:
           --exclude=.git \
           -e "ssh -p 5726 -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
           ./ \
-          waqtmoney@103.234.185.16:/home/waqtmoney/waqt-testing-api/
+          waqtmoney@103.234.185.16:/home/waqtmoney/public_html/waqt-testing-api/
 
       - name: Install Dependencies and Start App
         run: |
@@ -45,7 +45,7 @@ jobs:
           -i ~/.ssh/deploy_key \
           -o StrictHostKeyChecking=no \
           waqtmoney@103.234.185.16 "
-            cd /home/waqtmoney/waqt-testing-api &&
+            cd /home/waqtmoney/repositories/waqt-testing-api &&
             npm install &&
             nohup npm start > app.log 2>&1 &
           "
