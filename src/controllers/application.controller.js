@@ -628,29 +628,45 @@ const resolveRepaymentContactFromPan = async (pan) => {
     throw createBadRequest("Enter a valid PAN number");
   }
 
-  const contact = await getRepaymentContactByPan(normalizedPan);
-  const mobile = normalizeMobile(contact.phone);
-
-  if (!/^[6-9]\d{9}$/.test(mobile)) {
-    throw createBadRequest("Registered mobile number is not available for this PAN");
-  }
-
-  // PAN is used only to identify the registered contact. Repayment data must come from CRM by mobile.
-  const crmDetails = await fetchCrmRepaymentDetails(mobile);
+  // Fetch from CRM API directly using PAN
+  const crmDetails = await fetchCrmRepaymentDetails(normalizedPan);
 
   if (!crmDetails) {
+    // If CRM lookup fails, try local DB as fallback
+    const localContact = await getRepaymentContactByPan(normalizedPan).catch(() => null);
+    if (localContact) {
+      const localMobile = normalizeMobile(localContact.phone);
+      const crmDetailsFallback = await fetchCrmRepaymentDetails(localMobile);
+      if (crmDetailsFallback) {
+        return {
+          applicationId: localContact.applicationId,
+          crmApplicationId: crmDetailsFallback.application_id,
+          loanId: crmDetailsFallback.loan_id,
+          phone: crmDetailsFallback.mobile || localMobile,
+          email: crmDetailsFallback.crm_status?.email || localContact.email || "",
+          name: crmDetailsFallback.full_name || crmDetailsFallback.crm_status?.customerName || "Customer",
+          crmDetails: crmDetailsFallback,
+        };
+      }
+    }
     const error = new Error("No active repayment found in CRM for this PAN");
     error.statusCode = 404;
     throw error;
   }
 
+  const mobile = normalizeMobile(crmDetails.mobile);
+
+  if (!/^[6-9]\d{9}$/.test(mobile)) {
+    throw createBadRequest("Registered mobile number is not available in CRM for this PAN");
+  }
+
   return {
-    applicationId: contact.applicationId,
+    applicationId: crmDetails.application_id,
     crmApplicationId: crmDetails.application_id,
     loanId: crmDetails.loan_id,
-    phone: crmDetails.mobile || mobile,
-    email: crmDetails.crm_status?.email || contact.email || "",
-    name: crmDetails.full_name || crmDetails.crm_status?.customerName || "Customer",
+    phone: mobile,
+    email: crmDetails.crm_status?.email || "",
+    name: crmDetails.full_name || "Customer",
     crmDetails,
   };
 };
