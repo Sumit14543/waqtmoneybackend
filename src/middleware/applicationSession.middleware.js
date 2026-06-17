@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import fs from "fs/promises";
 import { getAppSecret } from "../configs/secrets.js";
 import { getApplicationById } from "../services/application.service.js";
 import { parseCookies } from "../utils/cookies.js";
@@ -93,6 +94,30 @@ export const requireApplicationSession = (req, res, next) => {
 const getHeaderValue = (req, name) => String(req.headers[name] || "").trim();
 const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const cleanupUploadedFiles = async (req) => {
+  const files = [
+    ...(Array.isArray(req.files) ? req.files : []),
+    ...(req.file ? [req.file] : []),
+  ];
+
+  await Promise.all(
+    files
+      .map((file) => file?.path)
+      .filter(Boolean)
+      .map((filePath) => fs.unlink(filePath).catch(() => null))
+  );
+};
+
+const rejectRecoveredSession = async (req, res, statusCode = 401) => {
+  await cleanupUploadedFiles(req);
+  return res.status(statusCode).json({
+    success: false,
+    message:
+      statusCode === 403
+        ? "This application session does not match the request."
+        : "Application session expired. Please start again.",
+  });
+};
 
 export const requireApplicationSessionOrMatchingContact = async (req, res, next) => {
   const requestedApplicationId =
@@ -101,10 +126,7 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
 
   if (session?.applicationId) {
     if (!requestedApplicationId || String(session.applicationId) !== requestedApplicationId) {
-      return res.status(403).json({
-        success: false,
-        message: "This application session does not match the request.",
-      });
+      return rejectRecoveredSession(req, res, 403);
     }
 
     req.applicationSession = session;
@@ -116,20 +138,18 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
   }
 
   if (!requestedApplicationId) {
-    return res.status(401).json({
-      success: false,
-      message: "Application session expired. Please start again.",
-    });
+    return rejectRecoveredSession(req, res);
   }
 
-  const requestMobile = normalizeMobile(getHeaderValue(req, "x-application-mobile"));
-  const requestEmail = normalizeEmail(getHeaderValue(req, "x-application-email"));
+  const requestMobile = normalizeMobile(
+    getHeaderValue(req, "x-application-mobile") || req.body?.applicationMobile
+  );
+  const requestEmail = normalizeEmail(
+    getHeaderValue(req, "x-application-email") || req.body?.applicationEmail
+  );
 
   if (!requestMobile && !requestEmail) {
-    return res.status(401).json({
-      success: false,
-      message: "Application session expired. Please start again.",
-    });
+    return rejectRecoveredSession(req, res);
   }
 
   try {
@@ -140,10 +160,7 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
     const emailMatches = requestEmail && applicationEmail && requestEmail === applicationEmail;
 
     if (!application || (!mobileMatches && !emailMatches)) {
-      return res.status(401).json({
-        success: false,
-        message: "Application session expired. Please start again.",
-      });
+      return rejectRecoveredSession(req, res);
     }
 
     req.applicationSession = {

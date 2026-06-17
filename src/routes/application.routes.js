@@ -143,7 +143,7 @@ router.put("/bank-details", requireApplicationSession, updateBankDetailsApp);
 router.put("/reference-details", requireApplicationSession, updateReferenceDetailsApp);
 
 // Selfie verification plus one optional salary slip upload
-router.post("/upload-docs", requireApplicationSessionOrMatchingContact, documentUpload.any(), (req, res, next) => {
+router.post("/upload-docs", documentUpload.any(), requireApplicationSessionOrMatchingContact, (req, res, next) => {
   const parseDocumentTypes = () => {
     try {
       return JSON.parse(req.body.documentTypes || "[]");
@@ -173,7 +173,7 @@ router.post("/upload-docs", requireApplicationSessionOrMatchingContact, document
   next();
 }, updateApp);
 
-router.post("/upload-video-kyc", requireApplicationSessionOrMatchingContact, videoUpload.single("video"), (req, res, next) => {
+router.post("/upload-video-kyc", videoUpload.single("video"), requireApplicationSessionOrMatchingContact, (req, res, next) => {
   if (!req.file) {
     return res.status(400).json({
       success: false,
