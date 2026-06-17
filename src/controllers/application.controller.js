@@ -126,6 +126,53 @@ export const applyLoan = async (req, res, next) => {
   }
 };
 
+const normalizeSessionMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
+const normalizeSessionEmail = (value) => String(value || "").trim().toLowerCase();
+const normalizeSessionPan = (value) => String(value || "").trim().toUpperCase();
+
+export const recoverApplicationSession = async (req, res, next) => {
+  try {
+    const applicationId = String(req.body.applicationId || req.body.id || "").trim();
+    const requestMobile = normalizeSessionMobile(req.body.mobile || req.body.phone);
+    const requestEmail = normalizeSessionEmail(req.body.email);
+    const requestPan = normalizeSessionPan(req.body.pan || req.body.panNumber || req.body.pan_number);
+
+    if (!applicationId || (!requestMobile && !requestEmail && !requestPan)) {
+      return res.status(401).json({
+        success: false,
+        message: "Application session expired. Please start again.",
+      });
+    }
+
+    const application = await getApplicationById(applicationId);
+    const applicationMobile = normalizeSessionMobile(application?.mobile);
+    const applicationEmail = normalizeSessionEmail(application?.email);
+    const applicationPan = normalizeSessionPan(application?.pan_number);
+    const mobileMatches = requestMobile && applicationMobile && requestMobile === applicationMobile;
+    const emailMatches = requestEmail && applicationEmail && requestEmail === applicationEmail;
+    const panMatches = requestPan && applicationPan && requestPan === applicationPan;
+
+    if (!application || (!mobileMatches && !emailMatches && !panMatches)) {
+      return res.status(401).json({
+        success: false,
+        message: "Application session expired. Please start again.",
+      });
+    }
+
+    setApplicationSessionCookie(res, {
+      applicationId: application.application_id || applicationId,
+      mobile: applicationMobile,
+    });
+
+    return res.json({
+      success: true,
+      message: "Application session recovered",
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const updateApp = async (req, res, next) => {
   try {
     const { id, ...data } = req.body;
