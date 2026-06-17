@@ -79,6 +79,18 @@ jobs:
             npm install
           "
 
+      - name: Restart cPanel Passenger App
+        run: |
+          ssh -p 5726 \
+          -i ~/.ssh/deploy_key \
+          -o StrictHostKeyChecking=no \
+          waqtmoney@103.234.185.16 "
+            set -e
+            cd /home/waqtmoney/public_html/waqt-testing-api/
+            mkdir -p tmp
+            touch tmp/restart.txt
+          "
+
       - name: Stop Running Backend
         run: |
           ssh -p 5726 \
