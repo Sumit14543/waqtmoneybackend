@@ -45,6 +45,21 @@ jobs:
           ./ \
           waqtmoney@103.234.185.16:/home/waqtmoney/public_html/waqt-testing-api/
 
+      - name: Restore Remote Env From Secret
+        env:
+          CPANEL_ENV_B64: ${{ secrets.CPANEL_ENV_B64 }}
+        run: |
+          if [ -z "$CPANEL_ENV_B64" ]; then
+            echo "CPANEL_ENV_B64 secret is not configured; expecting remote .env to already exist."
+            exit 0
+          fi
+
+          printf '%s' "$CPANEL_ENV_B64" | ssh -p 5726 \
+          -i ~/.ssh/deploy_key \
+          -o StrictHostKeyChecking=no \
+          waqtmoney@103.234.185.16 \
+          "cd /home/waqtmoney/public_html/waqt-testing-api/ && base64 -d > .env && chmod 600 .env"
+
       - name: Verify Remote Env
         run: |
           ssh -p 5726 \
