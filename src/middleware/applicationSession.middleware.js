@@ -5,7 +5,7 @@ import { getApplicationById } from "../services/application.service.js";
 import { parseCookies } from "../utils/cookies.js";
 
 export const APPLICATION_SESSION_COOKIE = "application_session";
-const APPLICATION_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const APPLICATION_SESSION_TTL_MS = Number(process.env.APPLICATION_SESSION_TTL_MS || 7 * 24 * 60 * 60 * 1000);
 const isProduction = () => process.env.NODE_ENV === "production" || process.env.APP_ENV === "production";
 
 const encodeBase64Url = (value) => Buffer.from(value).toString("base64url");
@@ -44,6 +44,65 @@ const verifyApplicationSessionToken = (token) => {
   }
 };
 
+const getCookieValues = (req, cookieName) =>
+  String(req.headers.cookie || "")
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((values, part) => {
+      const separatorIndex = part.indexOf("=");
+      if (separatorIndex === -1) return values;
+
+      const name = decodeURIComponent(part.slice(0, separatorIndex).trim());
+      if (name !== cookieName) return values;
+
+      values.push(decodeURIComponent(part.slice(separatorIndex + 1).trim()));
+      return values;
+    }, []);
+
+const getApplicationCookieDomain = () => {
+  const configuredDomain = String(
+    process.env.APPLICATION_COOKIE_DOMAIN || process.env.COOKIE_DOMAIN || ""
+  ).trim();
+
+  if (configuredDomain) {
+    return configuredDomain.toLowerCase() === "none" ? undefined : configuredDomain;
+  }
+
+  if (!isProduction()) return undefined;
+
+  const candidateUrls = [
+    process.env.API_PUBLIC_BASE_URL,
+    process.env.CLIENT_BASE_URL,
+  ];
+
+  for (const candidateUrl of candidateUrls) {
+    try {
+      const hostname = new URL(candidateUrl).hostname;
+      if (hostname === "waqtmoney.com" || hostname.endsWith(".waqtmoney.com")) {
+        return ".waqtmoney.com";
+      }
+    } catch {
+      // Optional URL was missing or malformed; keep checking the next one.
+    }
+  }
+
+  return undefined;
+};
+
+const getApplicationSessionFromRequest = (req, requestedApplicationId = "") => {
+  const cookieTokens = getCookieValues(req, APPLICATION_SESSION_COOKIE);
+  const parsedCookieToken = parseCookies(req)[APPLICATION_SESSION_COOKIE];
+  const tokens = [...new Set([...cookieTokens, parsedCookieToken].filter(Boolean))];
+  const sessions = tokens.map(verifyApplicationSessionToken).filter(Boolean);
+
+  if (requestedApplicationId) {
+    return sessions.find((session) => String(session.applicationId) === String(requestedApplicationId)) || null;
+  }
+
+  return sessions[0] || null;
+};
+
 export const createApplicationSessionToken = ({ applicationId, mobile = "" }) => {
   const payload = encodeBase64Url(JSON.stringify({
     purpose: "application",
@@ -56,18 +115,23 @@ export const createApplicationSessionToken = ({ applicationId, mobile = "" }) =>
 };
 
 export const setApplicationSessionCookie = (res, { applicationId, mobile = "" }) => {
-  res.cookie(APPLICATION_SESSION_COOKIE, createApplicationSessionToken({ applicationId, mobile }), {
+  const cookieOptions = {
     httpOnly: true,
     secure: isProduction(),
     sameSite: "lax",
     maxAge: APPLICATION_SESSION_TTL_MS,
     path: "/api",
-  });
+  };
+  const cookieDomain = getApplicationCookieDomain();
+
+  if (cookieDomain) cookieOptions.domain = cookieDomain;
+
+  res.cookie(APPLICATION_SESSION_COOKIE, createApplicationSessionToken({ applicationId, mobile }), cookieOptions);
 };
 
 export const requireApplicationSession = (req, res, next) => {
   const requestedApplicationId = getRequestedApplicationId(req);
-  const session = verifyApplicationSessionToken(parseCookies(req)[APPLICATION_SESSION_COOKIE]);
+  const session = getApplicationSessionFromRequest(req, requestedApplicationId);
 
   if (!requestedApplicationId || !session?.applicationId) {
     return res.status(401).json({
@@ -123,7 +187,7 @@ const rejectRecoveredSession = async (req, res, statusCode = 401) => {
 export const requireApplicationSessionOrMatchingContact = async (req, res, next) => {
   const requestedApplicationId =
     getRequestedApplicationId(req) || getHeaderValue(req, "x-application-id");
-  const session = verifyApplicationSessionToken(parseCookies(req)[APPLICATION_SESSION_COOKIE]);
+  const session = getApplicationSessionFromRequest(req, requestedApplicationId);
 
   if (session?.applicationId) {
     if (!requestedApplicationId || String(session.applicationId) !== requestedApplicationId) {
