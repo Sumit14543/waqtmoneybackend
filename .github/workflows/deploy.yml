@@ -58,7 +58,6 @@ jobs:
             if command -v pgrep >/dev/null 2>&1; then pgrep -f '[n]ode .*waqt-testing-api' | xargs -r kill 2>/dev/null || true; fi
             if command -v pgrep >/dev/null 2>&1; then pgrep -f '[n]ode .*Server.js' | xargs -r kill 2>/dev/null || true; fi
             if command -v pgrep >/dev/null 2>&1; then pgrep -f '[n]ode .*server.js' | xargs -r kill 2>/dev/null || true; fi
-            grep -R \"recover-session\" src/routes/application.routes.js
             nohup env NODE_ENV=production APP_ENV=production node Server.js > app.log 2>&1 < /dev/null &
             echo \$! > app.pid
             sleep 8
