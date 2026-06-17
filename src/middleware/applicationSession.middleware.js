@@ -23,7 +23,7 @@ const getRequestedApplicationId = (req) =>
       "",
   ).trim();
 
-const verifyApplicationSessionToken = (token) => {
+const verifySignedApplicationToken = (token, allowedPurposes = ["application"]) => {
   const [payload, signature] = String(token || "").split(".");
   if (!payload || !signature) return null;
 
@@ -37,12 +37,14 @@ const verifyApplicationSessionToken = (token) => {
 
   try {
     const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    if (session.purpose !== "application" || Number(session.expires || 0) < Date.now()) return null;
+    if (!allowedPurposes.includes(session.purpose) || Number(session.expires || 0) < Date.now()) return null;
     return session;
   } catch {
     return null;
   }
 };
+
+const verifyApplicationSessionToken = (token) => verifySignedApplicationToken(token, ["application"]);
 
 const getCookieValues = (req, cookieName) =>
   String(req.headers.cookie || "")
@@ -112,6 +114,30 @@ export const createApplicationSessionToken = ({ applicationId, mobile = "" }) =>
   }));
 
   return `${payload}.${signPayload(payload)}`;
+};
+
+export const createApplicationUploadToken = ({ applicationId }) => {
+  const payload = encodeBase64Url(JSON.stringify({
+    purpose: "application_upload",
+    applicationId: String(applicationId || ""),
+    expires: Date.now() + APPLICATION_SESSION_TTL_MS,
+  }));
+
+  return `${payload}.${signPayload(payload)}`;
+};
+
+const verifyApplicationUploadToken = (token, applicationId) => {
+  const session = verifySignedApplicationToken(token, ["application_upload"]);
+
+  if (
+    session?.purpose === "application_upload" &&
+    session.applicationId &&
+    String(session.applicationId) === String(applicationId || "")
+  ) {
+    return session;
+  }
+
+  return null;
 };
 
 export const setApplicationSessionCookie = (res, { applicationId, mobile = "" }) => {
@@ -188,6 +214,10 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
   const requestedApplicationId =
     getRequestedApplicationId(req) || getHeaderValue(req, "x-application-id");
   const session = getApplicationSessionFromRequest(req, requestedApplicationId);
+  const uploadToken = String(
+    req.body?.applicationUploadToken || getHeaderValue(req, "x-application-upload-token")
+  ).trim();
+  const uploadSession = verifyApplicationUploadToken(uploadToken, requestedApplicationId);
 
   if (session?.applicationId) {
     if (!requestedApplicationId || String(session.applicationId) !== requestedApplicationId) {
@@ -198,6 +228,18 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
     setApplicationSessionCookie(res, {
       applicationId: session.applicationId,
       mobile: session.mobile,
+    });
+    return next();
+  }
+
+  if (uploadSession?.applicationId) {
+    req.applicationSession = {
+      applicationId: uploadSession.applicationId,
+      recovered: true,
+      viaUploadToken: true,
+    };
+    setApplicationSessionCookie(res, {
+      applicationId: uploadSession.applicationId,
     });
     return next();
   }

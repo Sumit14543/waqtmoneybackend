@@ -26,7 +26,10 @@ import {
   PRODUCTION_WEB_ORIGINS,
 } from "../configs/integrations.js";
 import { getAppSecret } from "../configs/secrets.js";
-import { setApplicationSessionCookie } from "../middleware/applicationSession.middleware.js";
+import {
+  createApplicationUploadToken,
+  setApplicationSessionCookie,
+} from "../middleware/applicationSession.middleware.js";
 import { parseCookies } from "../utils/cookies.js";
 import logger from "../utils/logger.js";
 
@@ -108,16 +111,21 @@ export const applyLoan = async (req, res, next) => {
     });
 
     const responseApplicationId = result.applicationId || result.application_id || result.id;
+    const applicationUploadToken = createApplicationUploadToken({
+      applicationId: responseApplicationId,
+    });
     res.status(200).json({
       success: true,
       message: "Application submitted",
       id: result.id,
       applicationId: responseApplicationId,
       application_id: responseApplicationId,
+      applicationUploadToken,
       data: {
         ...result,
         applicationId: responseApplicationId,
         application_id: responseApplicationId,
+        applicationUploadToken,
       },
     });
 
@@ -167,6 +175,9 @@ export const recoverApplicationSession = async (req, res, next) => {
     return res.json({
       success: true,
       message: "Application session recovered",
+      applicationUploadToken: createApplicationUploadToken({
+        applicationId: application.application_id || applicationId,
+      }),
     });
   } catch (err) {
     next(err);
