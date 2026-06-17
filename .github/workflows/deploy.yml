@@ -35,6 +35,10 @@ jobs:
           rsync -avz --delete \
           --exclude=node_modules \
           --exclude=.git \
+          --exclude=cache \
+          --exclude=uploads \
+          --exclude=app.log \
+          --exclude=.well-known \
           -e "ssh -p 5726 -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
           ./ \
           waqtmoney@103.234.185.16:/home/waqtmoney/public_html/waqt-testing-api/
