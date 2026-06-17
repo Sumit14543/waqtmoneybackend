@@ -51,7 +51,7 @@ const applyCorsHeaders = (req, res) => {
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Repayment-Access-Token, X-Application-Id, X-Application-Mobile, X-Application-Email, X-Application-Pan, X-Application-Upload-Token",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Repayment-Access-Token, X-Application-Id, X-Application-Mobile, X-Application-Email, X-Application-Pan, X-Application-Upload-Token, x-repayment-access-token, x-application-id, x-application-mobile, x-application-email, x-application-pan, x-application-upload-token",
   );
 
   return true;
@@ -83,6 +83,12 @@ const corsOptions = {
     "X-Application-Email",
     "X-Application-Pan",
     "X-Application-Upload-Token",
+    "x-repayment-access-token",
+    "x-application-id",
+    "x-application-mobile",
+    "x-application-email",
+    "x-application-pan",
+    "x-application-upload-token",
   ],
 };
 
