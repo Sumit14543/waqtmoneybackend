@@ -16,6 +16,7 @@ import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 import {
   fetchCrmRepaymentDetails,
   syncRepaymentToCRM,
+  fetchCrmLeadStatusByPan,
 } from "../services/repayment.service.js";
 import crypto from "crypto";
 import db from "../configs/db.js";
@@ -26,7 +27,11 @@ import {
   PRODUCTION_WEB_ORIGINS,
 } from "../configs/integrations.js";
 import { getAppSecret } from "../configs/secrets.js";
-import { setApplicationSessionCookie } from "../middleware/applicationSession.middleware.js";
+import {
+  setApplicationSessionCookie,
+  createApplicationUploadToken,
+  verifyApplicationUploadToken,
+} from "../middleware/applicationSession.middleware.js";
 import { parseCookies } from "../utils/cookies.js";
 import logger from "../utils/logger.js";
 
@@ -113,6 +118,109 @@ export const applyLoan = async (req, res, next) => {
       data: result,
     });
 
+  } catch (err) {
+    next(err);
+  }
+};
+
+const normalizeSessionMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
+const normalizeSessionEmail = (value) => String(value || "").trim().toLowerCase();
+const normalizeSessionPan = (value) => String(value || "").trim().toUpperCase();
+const DRAFT_SESSION_RECOVERY_TTL_MS = Number(
+  process.env.DRAFT_UPLOAD_RECOVERY_TTL_MS || 72 * 60 * 60 * 1000
+);
+
+const isRecoverableDraftApplication = (application) => {
+  if (!application) return false;
+  if (Number(application.lead_visible || 0) === 1) return false;
+  if (application.completed_at) return false;
+  if (application.current_step === "video_kyc_completed") return false;
+
+  const activityDate = application.last_activity_at || application.created_at;
+  const activityTime = activityDate ? new Date(activityDate).getTime() : 0;
+
+  return Number.isFinite(activityTime) && Date.now() - activityTime <= DRAFT_SESSION_RECOVERY_TTL_MS;
+};
+
+const isActiveDraftApplication = (application) => {
+  if (!application) return false;
+  if (Number(application.lead_visible || 0) === 1) return false;
+  if (application.completed_at) return false;
+
+  const step = String(application.current_step || "").toLowerCase();
+  return !["video_kyc_completed", "loan_closed", "rejected", "cancelled"].includes(step);
+};
+
+const sendRecoveredApplicationSession = (res, application, applicationId) => {
+  const recoveredApplicationId = application?.application_id || applicationId;
+  const recoveredMobile = normalizeSessionMobile(application?.mobile);
+
+  setApplicationSessionCookie(res, {
+    applicationId: recoveredApplicationId,
+    mobile: recoveredMobile,
+  });
+
+  return res.json({
+    success: true,
+    message: "Application session recovered",
+    applicationUploadToken: createApplicationUploadToken({
+      applicationId: recoveredApplicationId,
+    }),
+  });
+};
+
+export const recoverApplicationSession = async (req, res, next) => {
+  try {
+    const applicationId = String(req.body.applicationId || req.body.id || "").trim();
+    const requestMobile = normalizeSessionMobile(req.body.mobile || req.body.phone);
+    const requestEmail = normalizeSessionEmail(req.body.email);
+    const requestPan = normalizeSessionPan(req.body.pan || req.body.panNumber || req.body.pan_number);
+    const uploadToken = String(
+      req.body.applicationUploadToken || req.headers["x-application-upload-token"] || ""
+    ).trim();
+
+    if (!applicationId) {
+      return res.status(401).json({
+        success: false,
+        message: "Application session expired. Please start again.",
+      });
+    }
+
+    const application = await getApplicationById(applicationId);
+
+    if (
+      application &&
+      verifyApplicationUploadToken(uploadToken, application.application_id || applicationId)
+    ) {
+      return sendRecoveredApplicationSession(res, application, applicationId);
+    }
+
+    if (!requestMobile && !requestEmail && !requestPan) {
+      if (isRecoverableDraftApplication(application) || isActiveDraftApplication(application)) {
+        return sendRecoveredApplicationSession(res, application, applicationId);
+      }
+
+      return res.status(401).json({
+        success: false,
+        message: "Application session expired. Please start again.",
+      });
+    }
+
+    const applicationMobile = normalizeSessionMobile(application?.mobile);
+    const applicationEmail = normalizeSessionEmail(application?.email);
+    const applicationPan = normalizeSessionPan(application?.pan_number);
+    const mobileMatches = requestMobile && applicationMobile && requestMobile === applicationMobile;
+    const emailMatches = requestEmail && applicationEmail && requestEmail === applicationEmail;
+    const panMatches = requestPan && applicationPan && requestPan === applicationPan;
+
+    if (!application || (!mobileMatches && !emailMatches && !panMatches && !isActiveDraftApplication(application))) {
+      return res.status(401).json({
+        success: false,
+        message: "Application session expired. Please start again.",
+      });
+    }
+
+    return sendRecoveredApplicationSession(res, application, applicationId);
   } catch (err) {
     next(err);
   }
@@ -508,30 +616,46 @@ const resolveRepaymentContactFromPan = async (pan) => {
     throw createBadRequest("Enter a valid PAN number");
   }
 
-  const contact = await getRepaymentContactByPan(normalizedPan);
-  const mobile = normalizeMobile(contact.phone);
+  // Fetch the raw CRM status directly using PAN (bypassing repayment filters)
+  const crmStatus = await fetchCrmLeadStatusByPan(normalizedPan).catch(() => null);
 
-  if (!/^[6-9]\d{9}$/.test(mobile)) {
-    throw createBadRequest("Registered mobile number is not available for this PAN");
-  }
-
-  // PAN is used only to identify the registered contact. Repayment data must come from CRM by mobile.
-  const crmDetails = await fetchCrmRepaymentDetails(mobile);
-
-  if (!crmDetails) {
-    const error = new Error("No active repayment found in CRM for this PAN");
+  if (!crmStatus) {
+    // If CRM lookup fails, try local DB as fallback
+    const localContact = await getRepaymentContactByPan(normalizedPan).catch(() => null);
+    if (localContact) {
+      const localMobile = normalizeMobile(localContact.phone);
+      const crmDetailsFallback = await fetchCrmRepaymentDetails(localMobile);
+      if (crmDetailsFallback) {
+        return {
+          applicationId: localContact.applicationId,
+          crmApplicationId: crmDetailsFallback.application_id,
+          loanId: crmDetailsFallback.loan_id,
+          phone: crmDetailsFallback.mobile || localMobile,
+          email: crmDetailsFallback.crm_status?.email || localContact.email || "",
+          name: crmDetailsFallback.full_name || crmDetailsFallback.crm_status?.customerName || "Customer",
+          crmDetails: crmDetailsFallback,
+        };
+      }
+    }
+    const error = new Error("No loan application or active lead found in CRM for this PAN");
     error.statusCode = 404;
     throw error;
   }
 
+  const mobile = normalizeMobile(crmStatus.phone || crmStatus.mobile);
+
+  if (!/^[6-9]\d{9}$/.test(mobile)) {
+    throw createBadRequest("Registered mobile number is not available in CRM for this PAN");
+  }
+
   return {
-    applicationId: contact.applicationId,
-    crmApplicationId: crmDetails.application_id,
-    loanId: crmDetails.loan_id,
-    phone: crmDetails.mobile || mobile,
-    email: crmDetails.crm_status?.email || contact.email || "",
-    name: crmDetails.full_name || crmDetails.crm_status?.customerName || "Customer",
-    crmDetails,
+    applicationId: crmStatus.sourceLeadId || crmStatus.sourceApplicationId || crmStatus.applicationId || "",
+    crmApplicationId: crmStatus.applicationId || "",
+    loanId: crmStatus.repayment?.loanId || crmStatus.loanId || "",
+    phone: mobile,
+    email: crmStatus.email || "",
+    name: crmStatus.customerName || "Customer",
+    crmDetails: crmStatus,
   };
 };
 

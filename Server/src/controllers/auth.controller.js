@@ -4,9 +4,9 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { getAppSecret, getJwtSecret } from "../configs/secrets.js";
 import {
-  CRM_API_BASE_URL,
-  CRM_SANCTION_PDF_API_URL,
-  CRM_STATUS_API_URL,
+  CRM_API_BASE_URLS,
+  CRM_SANCTION_PDF_API_URLS,
+  CRM_STATUS_API_URLS,
 } from "../configs/integrations.js";
 import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 import { fetchCrmRepaymentDetails } from "../services/repayment.service.js";
@@ -326,23 +326,32 @@ const fetchCrmLeadStatusBySourceId = async (sourceId) => {
     throw error;
   }
 
-  const url = new URL(CRM_STATUS_API_URL);
-  url.searchParams.set("sourceSystem", "waqtmoney");
-  url.searchParams.set("sourceLeadId", sourceId);
-  url.searchParams.set("sourceApplicationId", sourceId);
+  let lastError;
 
-  const response = await fetch(url, {
-    headers: buildIntegrationHeaders(),
-  });
-  const data = await response.json().catch(() => ({}));
+  for (const endpointUrl of CRM_STATUS_API_URLS) {
+    try {
+      const url = new URL(endpointUrl);
+      url.searchParams.set("sourceSystem", "waqtmoney");
+      url.searchParams.set("sourceLeadId", sourceId);
+      url.searchParams.set("sourceApplicationId", sourceId);
 
-  if (!response.ok || !data.success) {
-    const error = new Error(data.message || "Unable to fetch CRM status");
-    error.statusCode = response.status;
-    throw error;
+      const response = await fetch(url, {
+        headers: buildIntegrationHeaders(),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && data.success) {
+        return data.data || null;
+      }
+
+      lastError = new Error(data.message || "Unable to fetch CRM status");
+      lastError.statusCode = response.status;
+    } catch (error) {
+      lastError = error;
+    }
   }
 
-  return data.data || null;
+  throw lastError;
 };
 
 const normalizeCrmStatusList = (data) => {
@@ -468,62 +477,81 @@ const withDashboardCrmStage = (crmStatus = null) => {
   };
 };
 
-const getCrmSanctionPdfUrl = (crmStatus = {}, loanId = "") => {
+const getCrmSanctionPdfUrls = (crmStatus = {}, loanId = "") => {
   const sourceLeadId = crmStatus.sourceLeadId || crmStatus.sourceApplicationId || loanId;
-  const rawUrl =
-    crmStatus.sanction?.pdfUrl ||
-    (sourceLeadId
-      ? `${CRM_SANCTION_PDF_API_URL}?sourceSystem=waqtmoney&sourceLeadId=${encodeURIComponent(sourceLeadId)}`
-      : "");
+  const rawPdfUrl = String(crmStatus.sanction?.pdfUrl || "");
+  const generatedUrls = sourceLeadId
+    ? CRM_SANCTION_PDF_API_URLS.map(
+      (endpointUrl) => `${endpointUrl}?sourceSystem=waqtmoney&sourceLeadId=${encodeURIComponent(sourceLeadId)}`
+    )
+    : [];
 
-  const pdfUrl = String(rawUrl || "");
-  if (pdfUrl.startsWith("/api/integrations/")) {
-    return `${CRM_API_BASE_URL}${pdfUrl}`;
+  if (!rawPdfUrl) {
+    return generatedUrls;
   }
 
-  return pdfUrl.replace(
-    /^https:\/\/(?:www\.)?waqtmoney\.com\/api\/integrations\//i,
-    `${CRM_API_BASE_URL}/api/integrations/`
+  if (rawPdfUrl.startsWith("/api/integrations/")) {
+    return CRM_API_BASE_URLS.map((baseUrl) => `${baseUrl}${rawPdfUrl}`);
+  }
+
+  const normalizedUrls = CRM_API_BASE_URLS.map((baseUrl) =>
+    rawPdfUrl.replace(
+      /^https:\/\/(?:www\.)?waqtmoney\.com\/api\/integrations\//i,
+      `${baseUrl}/api/integrations/`
+    )
   );
+
+  return [...new Set([...normalizedUrls, ...generatedUrls])];
 };
 
 const fetchCrmSanctionPdf = async (crmStatus, loanId) => {
   const apiKey = getIntegrationApiKey();
-  const pdfUrl = getCrmSanctionPdfUrl(crmStatus, loanId);
-  if (!apiKey || !pdfUrl) return null;
+  const pdfUrls = getCrmSanctionPdfUrls(crmStatus, loanId);
+  if (!apiKey || !pdfUrls.length) return null;
 
-  const response = await fetch(pdfUrl, {
-    headers: buildIntegrationHeaders(),
-  });
-  const contentType = String(response.headers.get("content-type") || "");
+  for (const pdfUrl of pdfUrls) {
+    const response = await fetch(pdfUrl, {
+      headers: buildIntegrationHeaders(),
+    }).catch(() => null);
+    const contentType = String(response?.headers?.get("content-type") || "");
 
-  if (!response.ok || !contentType.toLowerCase().includes("application/pdf")) {
-    return null;
+    if (response?.ok && contentType.toLowerCase().includes("application/pdf")) {
+      return Buffer.from(await response.arrayBuffer());
+    }
   }
 
-  return Buffer.from(await response.arrayBuffer());
+  return null;
 };
 
 const fetchCrmLeadStatusesByMobile = async (mobile) => {
   const apiKey = getIntegrationApiKey();
   if (!apiKey || !mobile) return [];
 
-  const url = new URL(CRM_STATUS_API_URL);
-  url.searchParams.set("sourceSystem", "waqtmoney");
-  url.searchParams.set("mobile", mobile);
+  let lastError;
 
-  const response = await fetch(url, {
-    headers: buildIntegrationHeaders(),
-  });
-  const data = await response.json().catch(() => ({}));
+  for (const endpointUrl of CRM_STATUS_API_URLS) {
+    try {
+      const url = new URL(endpointUrl);
+      url.searchParams.set("sourceSystem", "waqtmoney");
+      url.searchParams.set("mobile", mobile);
 
-  if (!response.ok || !data.success) {
-    const error = new Error(data.message || "Unable to fetch CRM status by mobile");
-    error.statusCode = response.status;
-    throw error;
+      const response = await fetch(url, {
+        headers: buildIntegrationHeaders(),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && data.success) {
+        return normalizeCrmStatusList(data.data);
+      }
+
+      lastError = new Error(data.message || "Unable to fetch CRM status by mobile");
+      lastError.statusCode = response.status;
+    } catch (error) {
+      lastError = error;
+    }
   }
 
-  return normalizeCrmStatusList(data.data);
+  throw lastError;
 };
 
 const fetchCrmLeadStatus = async (sourceIds) => {

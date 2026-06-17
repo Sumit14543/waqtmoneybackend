@@ -16,7 +16,6 @@ Server - Copy/
 
 # Environment files and secrets
 .env
-.env.*
 !.env.example
 Server/.env
 Server/.env.*

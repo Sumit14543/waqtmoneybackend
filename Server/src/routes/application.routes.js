@@ -4,7 +4,10 @@ import fs from "fs";
 import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
-import { requireApplicationSession } from "../middleware/applicationSession.middleware.js";
+import {
+  requireApplicationSession,
+  requireApplicationSessionOrMatchingContact,
+} from "../middleware/applicationSession.middleware.js";
 import {
   applyLoan,
   createRepaymentPaymentOrder,
@@ -13,6 +16,7 @@ import {
   getApp,
   getRepaymentDetails,
   getRepaymentPaymentStatus,
+  recoverApplicationSession,
   sendRepaymentOtp,
   saveContactQuery,
   saveHeroLead,
@@ -131,6 +135,7 @@ router.post("/repayment/verify-otp", verifyRepaymentOtp);
 router.post("/repayment/create-payment-order", createRepaymentPaymentOrder);
 router.get("/repayment/details/:id", getRepaymentDetails);
 router.get("/repayment/payment-status/:orderId", getRepaymentPaymentStatus);
+router.post("/recover-session", recoverApplicationSession);
 router.get("/ifsc/:ifsc", getIfscDetails);
 router.get("/uan/:id", requireApplicationSession, getApplicationUan);
 router.get("/:id", requireApplicationSession, getApp);
@@ -140,7 +145,7 @@ router.put("/bank-details", requireApplicationSession, updateBankDetailsApp);
 router.put("/reference-details", requireApplicationSession, updateReferenceDetailsApp);
 
 // Selfie verification plus one optional salary slip upload
-router.post("/upload-docs", requireApplicationSession, documentUpload.any(), (req, res, next) => {
+router.post("/upload-docs", documentUpload.any(), requireApplicationSessionOrMatchingContact, (req, res, next) => {
   const parseDocumentTypes = () => {
     try {
       return JSON.parse(req.body.documentTypes || "[]");
@@ -170,7 +175,7 @@ router.post("/upload-docs", requireApplicationSession, documentUpload.any(), (re
   next();
 }, updateApp);
 
-router.post("/upload-video-kyc", requireApplicationSession, videoUpload.single("video"), (req, res, next) => {
+router.post("/upload-video-kyc", videoUpload.single("video"), requireApplicationSessionOrMatchingContact, (req, res, next) => {
   if (!req.file) {
     return res.status(400).json({
       success: false,

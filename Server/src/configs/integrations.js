@@ -7,6 +7,7 @@ const listFromEnv = (value, fallback = []) => {
 
   return configured.length ? configured : fallback;
 };
+const uniqueList = (items) => [...new Set(items.filter(Boolean))];
 
 export const PRODUCTION_WEB_ORIGINS = listFromEnv(process.env.PRODUCTION_WEB_ORIGINS, [
   "https://waqtmoney.com",
@@ -20,17 +21,40 @@ export const LOCAL_WEB_ORIGINS = listFromEnv(process.env.LOCAL_WEB_ORIGINS, [
 export const LOCAL_API_PUBLIC_BASE_URL =
   process.env.LOCAL_API_PUBLIC_BASE_URL || "http://localhost:5000/api";
 
-export const CRM_API_BASE_URL = trimTrailingSlash(
-  process.env.CRM_API_BASE_URL || "https://payday-api.waqtmoney.com",
+const DEFAULT_CRM_API_BASE_URLS = [
+  "https://testing-api.waqtmoney.com",
+  "https://payday-api.waqtmoney.com",
+];
+const configuredCrmBaseUrls = listFromEnv(
+  process.env.CRM_API_BASE_URLS || process.env.CRM_API_BASE_URL,
+  [],
 );
+export const CRM_API_BASE_URLS = uniqueList([
+  ...configuredCrmBaseUrls,
+  ...DEFAULT_CRM_API_BASE_URLS,
+]).map(trimTrailingSlash);
+export const CRM_API_BASE_URL = CRM_API_BASE_URLS[0];
+const crmUrls = (envValue, path) =>
+  uniqueList([
+    ...listFromEnv(envValue, []),
+    ...CRM_API_BASE_URLS.map((baseUrl) => `${baseUrl}${path}`),
+  ]);
+
+export const CRM_LEADS_API_URLS = crmUrls(process.env.CRM_LEADS_API_URL, "/api/integrations/leads");
 export const CRM_LEADS_API_URL =
-  process.env.CRM_LEADS_API_URL || `${CRM_API_BASE_URL}/api/integrations/leads`;
+  CRM_LEADS_API_URLS[0];
+export const CRM_STATUS_API_URLS = crmUrls(process.env.CRM_STATUS_API_URL, "/api/integrations/leads/status");
 export const CRM_STATUS_API_URL =
-  process.env.CRM_STATUS_API_URL || `${CRM_API_BASE_URL}/api/integrations/leads/status`;
+  CRM_STATUS_API_URLS[0];
+export const CRM_REPAYMENTS_API_URLS = crmUrls(process.env.CRM_REPAYMENTS_API_URL, "/api/integrations/repayments");
 export const CRM_REPAYMENTS_API_URL =
-  process.env.CRM_REPAYMENTS_API_URL || `${CRM_API_BASE_URL}/api/integrations/repayments`;
+  CRM_REPAYMENTS_API_URLS[0];
+export const CRM_SANCTION_PDF_API_URLS = crmUrls(
+  process.env.CRM_SANCTION_PDF_API_URL,
+  "/api/integrations/leads/sanction-pdf",
+);
 export const CRM_SANCTION_PDF_API_URL =
-  process.env.CRM_SANCTION_PDF_API_URL || `${CRM_API_BASE_URL}/api/integrations/leads/sanction-pdf`;
+  CRM_SANCTION_PDF_API_URLS[0];
 
 export const BIFROST_BASE_URL = trimTrailingSlash(
   process.env.BIFROST_BASE_URL || "https://bifrost.unifers.ai/enrich",

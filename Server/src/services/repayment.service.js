@@ -177,7 +177,7 @@ const fetchCrmLeadStatusById = (identifier) =>
 const fetchCrmLeadStatusByMobile = (mobile) =>
   fetchCrmLeadStatus({ mobile: normalizeMobile(mobile) });
 
-const fetchCrmLeadStatusByPan = (pan) =>
+export const fetchCrmLeadStatusByPan = (pan) =>
   fetchCrmLeadStatus({
     pan: normalizePan(pan),
     panNumber: normalizePan(pan),
@@ -229,6 +229,7 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
     crmStatus.approvedAmount,
     crmStatus.approved_amount,
     crmStatus.sanctionedAmount,
+    crmStatus.loanAmount,
     repayment.principalDue
   );
   const tenureDays =
@@ -236,7 +237,7 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
     firstNumber(crmStatus.sanction?.tenureDays, crmStatus.sanction?.tenure_days, crmStatus.tenureDays, crmStatus.tenure_days);
   const interestAccrued =
     repayment.interestAccrued ||
-    firstNumber(crmStatus.sanction?.interestAccrued, crmStatus.sanction?.interest_accrued, crmStatus.interestAccrued);
+    firstNumber(crmStatus.sanction?.interestAccrued, crmStatus.sanction?.interest_accrued, crmStatus.interestAccrued, crmStatus.interest_accrued);
   const interestRate =
     repayment.interestRate ||
     firstNumber(crmStatus.sanction?.interestRate, crmStatus.sanction?.interest_rate, crmStatus.interestRate, crmStatus.interest_rate);
