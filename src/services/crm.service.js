@@ -1,6 +1,6 @@
 import logger from "../utils/logger.js";
 import crypto from "crypto";
-import { CRM_LEADS_API_URL } from "../configs/integrations.js";
+import { CRM_LEADS_API_URLS } from "../configs/integrations.js";
 import { getAppSecret } from "../configs/secrets.js";
 
 const firstPresent = (...values) =>
@@ -342,16 +342,14 @@ const buildTestingPayload = (lead) => {
   };
 };
 
-const CRM_ENDPOINTS = [
-  {
-    name: "waqtmoney-payday",
-    url: CRM_LEADS_API_URL,
+const CRM_ENDPOINTS = CRM_LEADS_API_URLS.map((url, index) => ({
+    name: index === 0 ? "waqtmoney-primary" : `waqtmoney-fallback-${index}`,
+    url,
     keyEnvs: ["INTEGRATION_API_KEYS", "INTEGRATION_API_KEY", "CRM_INTEGRATION_API_KEY"],
     keyHeader: "x-integration-api-key",
     payload: buildTestingPayload,
-    primary: true,
-  },
-];
+    primary: index === 0,
+  }));
 
 const getEnvKey = (endpoint) =>
   endpoint.keyEnvs.map((envName) => process.env[envName]?.trim()).find(Boolean);
@@ -430,9 +428,14 @@ const syncEndpoint = async (endpoint, leadData) => {
 
 const syncLeadToCRM = async (leadData) => {
   try {
-    const results = await Promise.all(
-      CRM_ENDPOINTS.map((endpoint) => syncEndpoint(endpoint, leadData))
-    );
+    const results = [];
+
+    for (const endpoint of CRM_ENDPOINTS) {
+      const result = await syncEndpoint(endpoint, leadData);
+      results.push(result);
+      if (result.ok) break;
+    }
+
     const primary = results.find((result) => result.ok) || results[0];
 
     return {

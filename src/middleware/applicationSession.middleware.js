@@ -23,7 +23,15 @@ const getRequestedApplicationId = (req) =>
 
 const verifyApplicationSessionToken = (token) => {
   const [payload, signature] = String(token || "").split(".");
-  if (!payload || !signature || signPayload(payload) !== signature) return null;
+  if (!payload || !signature) return null;
+
+  const expectedSignature = signPayload(payload);
+  if (
+    signature.length !== expectedSignature.length ||
+    !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))
+  ) {
+    return null;
+  }
 
   try {
     const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
@@ -74,5 +82,9 @@ export const requireApplicationSession = (req, res, next) => {
   }
 
   req.applicationSession = session;
+  setApplicationSessionCookie(res, {
+    applicationId: session.applicationId,
+    mobile: session.mobile,
+  });
   return next();
 };

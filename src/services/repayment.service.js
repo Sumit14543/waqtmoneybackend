@@ -1,7 +1,7 @@
 import logger from "../utils/logger.js";
 import {
-  CRM_REPAYMENTS_API_URL,
-  CRM_STATUS_API_URL,
+  CRM_REPAYMENTS_API_URLS,
+  CRM_STATUS_API_URLS,
 } from "../configs/integrations.js";
 
 const SOURCE_SYSTEM = process.env.CRM_SOURCE_SYSTEM || "waqtmoney";
@@ -146,26 +146,41 @@ const fetchCrmLeadStatus = async (params) => {
     throw error;
   }
 
-  const url = new URL(CRM_STATUS_API_URL);
-  url.searchParams.set("sourceSystem", SOURCE_SYSTEM);
+  let lastError;
 
-  Object.entries(params).forEach(([key, value]) => {
-    if (String(value || "").trim()) {
-      url.searchParams.set(key, String(value).trim());
+  for (const endpointUrl of CRM_STATUS_API_URLS) {
+    try {
+      const url = new URL(endpointUrl);
+      url.searchParams.set("sourceSystem", SOURCE_SYSTEM);
+
+      Object.entries(params).forEach(([key, value]) => {
+        if (String(value || "").trim()) {
+          url.searchParams.set(key, String(value).trim());
+        }
+      });
+
+      const response = await fetch(url, { headers: buildCrmHeaders() });
+      const payload = await readJsonOrText(response);
+
+      if (response.ok && payload?.success !== false) {
+        return unwrapCrmData(payload);
+      }
+
+      lastError = new Error(payload.message || "Unable to fetch CRM lead status");
+      lastError.statusCode = response.status;
+      lastError.data = payload;
+    } catch (error) {
+      lastError = error;
     }
-  });
 
-  const response = await fetch(url, { headers: buildCrmHeaders() });
-  const payload = await readJsonOrText(response);
-
-  if (!response.ok || payload?.success === false) {
-    const error = new Error(payload.message || "Unable to fetch CRM lead status");
-    error.statusCode = response.status;
-    error.data = payload;
-    throw error;
+    logger.warn("CRM lead status endpoint failed:", {
+      endpoint: endpointUrl,
+      statusCode: lastError.statusCode,
+      message: lastError.message,
+    });
   }
 
-  return unwrapCrmData(payload);
+  throw lastError;
 };
 
 const fetchCrmLeadStatusById = (identifier) =>
@@ -330,19 +345,34 @@ export const syncRepaymentToCRM = async (repayment) => {
     status: repayment.status || "success",
   };
 
-  const response = await fetch(CRM_REPAYMENTS_API_URL, {
-    method: "POST",
-    headers: buildCrmHeaders(),
-    body: JSON.stringify(payload),
-  });
-  const data = await readJsonOrText(response);
+  let lastError;
 
-  if (!response.ok || data?.success === false) {
-    const error = new Error(data.message || "Unable to sync repayment to CRM");
-    error.statusCode = response.status;
-    error.data = data;
-    throw error;
+  for (const endpointUrl of CRM_REPAYMENTS_API_URLS) {
+    try {
+      const response = await fetch(endpointUrl, {
+        method: "POST",
+        headers: buildCrmHeaders(),
+        body: JSON.stringify(payload),
+      });
+      const data = await readJsonOrText(response);
+
+      if (response.ok && data?.success !== false) {
+        return data;
+      }
+
+      lastError = new Error(data.message || "Unable to sync repayment to CRM");
+      lastError.statusCode = response.status;
+      lastError.data = data;
+    } catch (error) {
+      lastError = error;
+    }
+
+    logger.warn("CRM repayment sync endpoint failed:", {
+      endpoint: endpointUrl,
+      statusCode: lastError.statusCode,
+      message: lastError.message,
+    });
   }
 
-  return data;
+  throw lastError;
 };
