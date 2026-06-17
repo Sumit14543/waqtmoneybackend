@@ -94,6 +94,7 @@ export const requireApplicationSession = (req, res, next) => {
 const getHeaderValue = (req, name) => String(req.headers[name] || "").trim();
 const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const normalizePan = (value) => String(value || "").trim().toUpperCase();
 const cleanupUploadedFiles = async (req) => {
   const files = [
     ...(Array.isArray(req.files) ? req.files : []),
@@ -147,8 +148,11 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
   const requestEmail = normalizeEmail(
     getHeaderValue(req, "x-application-email") || req.body?.applicationEmail
   );
+  const requestPan = normalizePan(
+    getHeaderValue(req, "x-application-pan") || req.body?.applicationPan
+  );
 
-  if (!requestMobile && !requestEmail) {
+  if (!requestMobile && !requestEmail && !requestPan) {
     return rejectRecoveredSession(req, res);
   }
 
@@ -156,10 +160,12 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
     const application = await getApplicationById(requestedApplicationId);
     const applicationMobile = normalizeMobile(application?.mobile);
     const applicationEmail = normalizeEmail(application?.email);
+    const applicationPan = normalizePan(application?.pan_number);
     const mobileMatches = requestMobile && applicationMobile && requestMobile === applicationMobile;
     const emailMatches = requestEmail && applicationEmail && requestEmail === applicationEmail;
+    const panMatches = requestPan && applicationPan && requestPan === applicationPan;
 
-    if (!application || (!mobileMatches && !emailMatches)) {
+    if (!application || (!mobileMatches && !emailMatches && !panMatches)) {
       return rejectRecoveredSession(req, res);
     }
 
