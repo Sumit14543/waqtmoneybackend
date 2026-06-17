@@ -35,6 +35,8 @@ jobs:
           rsync -avz --delete \
           --exclude=node_modules \
           --exclude=.git \
+          --exclude=.env \
+          --exclude=.env.* \
           --exclude=cache \
           --exclude=uploads \
           --exclude=app.log \
@@ -42,6 +44,14 @@ jobs:
           -e "ssh -p 5726 -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
           ./ \
           waqtmoney@103.234.185.16:/home/waqtmoney/public_html/waqt-testing-api/
+
+      - name: Verify Remote Env
+        run: |
+          ssh -p 5726 \
+          -i ~/.ssh/deploy_key \
+          -o StrictHostKeyChecking=no \
+          waqtmoney@103.234.185.16 \
+          "test -s /home/waqtmoney/public_html/waqt-testing-api/.env"
 
       - name: Install Dependencies
         run: |
