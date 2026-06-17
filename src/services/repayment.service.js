@@ -177,7 +177,7 @@ const fetchCrmLeadStatusById = (identifier) =>
 const fetchCrmLeadStatusByMobile = (mobile) =>
   fetchCrmLeadStatus({ mobile: normalizeMobile(mobile) });
 
-const fetchCrmLeadStatusByPan = (pan) =>
+export const fetchCrmLeadStatusByPan = (pan) =>
   fetchCrmLeadStatus({
     pan: normalizePan(pan),
     panNumber: normalizePan(pan),

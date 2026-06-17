@@ -16,6 +16,7 @@ import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 import {
   fetchCrmRepaymentDetails,
   syncRepaymentToCRM,
+  fetchCrmLeadStatusByPan,
 } from "../services/repayment.service.js";
 import crypto from "crypto";
 import db from "../configs/db.js";
@@ -27,8 +28,8 @@ import {
 } from "../configs/integrations.js";
 import { getAppSecret } from "../configs/secrets.js";
 import {
-  createApplicationUploadToken,
   setApplicationSessionCookie,
+  createApplicationUploadToken,
   verifyApplicationUploadToken,
 } from "../middleware/applicationSession.middleware.js";
 import { parseCookies } from "../utils/cookies.js";
@@ -111,23 +112,10 @@ export const applyLoan = async (req, res, next) => {
       mobile: result.phone,
     });
 
-    const responseApplicationId = result.applicationId || result.application_id || result.id;
-    const applicationUploadToken = createApplicationUploadToken({
-      applicationId: responseApplicationId,
-    });
     res.status(200).json({
       success: true,
       message: "Application submitted",
-      id: result.id,
-      applicationId: responseApplicationId,
-      application_id: responseApplicationId,
-      applicationUploadToken,
-      data: {
-        ...result,
-        applicationId: responseApplicationId,
-        application_id: responseApplicationId,
-        applicationUploadToken,
-      },
+      data: result,
     });
 
   } catch (err) {
@@ -628,10 +616,10 @@ const resolveRepaymentContactFromPan = async (pan) => {
     throw createBadRequest("Enter a valid PAN number");
   }
 
-  // Fetch from CRM API directly using PAN
-  const crmDetails = await fetchCrmRepaymentDetails(normalizedPan);
+  // Fetch the raw CRM status directly using PAN (bypassing repayment filters)
+  const crmStatus = await fetchCrmLeadStatusByPan(normalizedPan).catch(() => null);
 
-  if (!crmDetails) {
+  if (!crmStatus) {
     // If CRM lookup fails, try local DB as fallback
     const localContact = await getRepaymentContactByPan(normalizedPan).catch(() => null);
     if (localContact) {
@@ -649,25 +637,25 @@ const resolveRepaymentContactFromPan = async (pan) => {
         };
       }
     }
-    const error = new Error("No active repayment found in CRM for this PAN");
+    const error = new Error("No loan application or active lead found in CRM for this PAN");
     error.statusCode = 404;
     throw error;
   }
 
-  const mobile = normalizeMobile(crmDetails.mobile);
+  const mobile = normalizeMobile(crmStatus.phone || crmStatus.mobile);
 
   if (!/^[6-9]\d{9}$/.test(mobile)) {
     throw createBadRequest("Registered mobile number is not available in CRM for this PAN");
   }
 
   return {
-    applicationId: crmDetails.application_id,
-    crmApplicationId: crmDetails.application_id,
-    loanId: crmDetails.loan_id,
+    applicationId: crmStatus.sourceLeadId || crmStatus.sourceApplicationId || crmStatus.applicationId || "",
+    crmApplicationId: crmStatus.applicationId || "",
+    loanId: crmStatus.repayment?.loanId || crmStatus.loanId || "",
     phone: mobile,
-    email: crmDetails.crm_status?.email || "",
-    name: crmDetails.full_name || "Customer",
-    crmDetails,
+    email: crmStatus.email || "",
+    name: crmStatus.customerName || "Customer",
+    crmDetails: crmStatus,
   };
 };
 
