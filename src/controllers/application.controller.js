@@ -29,6 +29,7 @@ import { getAppSecret } from "../configs/secrets.js";
 import {
   createApplicationUploadToken,
   setApplicationSessionCookie,
+  verifyApplicationUploadToken,
 } from "../middleware/applicationSession.middleware.js";
 import { parseCookies } from "../utils/cookies.js";
 import logger from "../utils/logger.js";
@@ -137,6 +138,39 @@ export const applyLoan = async (req, res, next) => {
 const normalizeSessionMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const normalizeSessionEmail = (value) => String(value || "").trim().toLowerCase();
 const normalizeSessionPan = (value) => String(value || "").trim().toUpperCase();
+const DRAFT_SESSION_RECOVERY_TTL_MS = Number(
+  process.env.DRAFT_UPLOAD_RECOVERY_TTL_MS || 72 * 60 * 60 * 1000
+);
+
+const isRecoverableDraftApplication = (application) => {
+  if (!application) return false;
+  if (Number(application.lead_visible || 0) === 1) return false;
+  if (application.completed_at) return false;
+  if (application.current_step === "video_kyc_completed") return false;
+
+  const activityDate = application.last_activity_at || application.created_at;
+  const activityTime = activityDate ? new Date(activityDate).getTime() : 0;
+
+  return Number.isFinite(activityTime) && Date.now() - activityTime <= DRAFT_SESSION_RECOVERY_TTL_MS;
+};
+
+const sendRecoveredApplicationSession = (res, application, applicationId) => {
+  const recoveredApplicationId = application?.application_id || applicationId;
+  const recoveredMobile = normalizeSessionMobile(application?.mobile);
+
+  setApplicationSessionCookie(res, {
+    applicationId: recoveredApplicationId,
+    mobile: recoveredMobile,
+  });
+
+  return res.json({
+    success: true,
+    message: "Application session recovered",
+    applicationUploadToken: createApplicationUploadToken({
+      applicationId: recoveredApplicationId,
+    }),
+  });
+};
 
 export const recoverApplicationSession = async (req, res, next) => {
   try {
@@ -144,8 +178,11 @@ export const recoverApplicationSession = async (req, res, next) => {
     const requestMobile = normalizeSessionMobile(req.body.mobile || req.body.phone);
     const requestEmail = normalizeSessionEmail(req.body.email);
     const requestPan = normalizeSessionPan(req.body.pan || req.body.panNumber || req.body.pan_number);
+    const uploadToken = String(
+      req.body.applicationUploadToken || req.headers["x-application-upload-token"] || ""
+    ).trim();
 
-    if (!applicationId || (!requestMobile && !requestEmail && !requestPan)) {
+    if (!applicationId) {
       return res.status(401).json({
         success: false,
         message: "Application session expired. Please start again.",
@@ -153,6 +190,25 @@ export const recoverApplicationSession = async (req, res, next) => {
     }
 
     const application = await getApplicationById(applicationId);
+
+    if (
+      application &&
+      verifyApplicationUploadToken(uploadToken, application.application_id || applicationId)
+    ) {
+      return sendRecoveredApplicationSession(res, application, applicationId);
+    }
+
+    if (!requestMobile && !requestEmail && !requestPan) {
+      if (isRecoverableDraftApplication(application)) {
+        return sendRecoveredApplicationSession(res, application, applicationId);
+      }
+
+      return res.status(401).json({
+        success: false,
+        message: "Application session expired. Please start again.",
+      });
+    }
+
     const applicationMobile = normalizeSessionMobile(application?.mobile);
     const applicationEmail = normalizeSessionEmail(application?.email);
     const applicationPan = normalizeSessionPan(application?.pan_number);
@@ -167,18 +223,7 @@ export const recoverApplicationSession = async (req, res, next) => {
       });
     }
 
-    setApplicationSessionCookie(res, {
-      applicationId: application.application_id || applicationId,
-      mobile: applicationMobile,
-    });
-
-    return res.json({
-      success: true,
-      message: "Application session recovered",
-      applicationUploadToken: createApplicationUploadToken({
-        applicationId: application.application_id || applicationId,
-      }),
-    });
+    return sendRecoveredApplicationSession(res, application, applicationId);
   } catch (err) {
     next(err);
   }

@@ -15,6 +15,7 @@ const signPayload = (payload) =>
 const getRequestedApplicationId = (req) =>
   String(
     req.params?.id ||
+      req.headers["x-application-id"] ||
       req.body?.applicationId ||
       req.body?.application_id ||
       req.body?.id ||
@@ -126,7 +127,7 @@ export const createApplicationUploadToken = ({ applicationId }) => {
   return `${payload}.${signPayload(payload)}`;
 };
 
-const verifyApplicationUploadToken = (token, applicationId) => {
+export const verifyApplicationUploadToken = (token, applicationId) => {
   const session = verifySignedApplicationToken(token, ["application_upload"]);
 
   if (
