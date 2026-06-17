@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { getAppSecret } from "../configs/secrets.js";
+import { getApplicationById } from "../services/application.service.js";
 import { parseCookies } from "../utils/cookies.js";
 
 export const APPLICATION_SESSION_COOKIE = "application_session";
@@ -87,4 +88,75 @@ export const requireApplicationSession = (req, res, next) => {
     mobile: session.mobile,
   });
   return next();
+};
+
+const getHeaderValue = (req, name) => String(req.headers[name] || "").trim();
+const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
+const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+
+export const requireApplicationSessionOrMatchingContact = async (req, res, next) => {
+  const requestedApplicationId =
+    getRequestedApplicationId(req) || getHeaderValue(req, "x-application-id");
+  const session = verifyApplicationSessionToken(parseCookies(req)[APPLICATION_SESSION_COOKIE]);
+
+  if (session?.applicationId) {
+    if (!requestedApplicationId || String(session.applicationId) !== requestedApplicationId) {
+      return res.status(403).json({
+        success: false,
+        message: "This application session does not match the request.",
+      });
+    }
+
+    req.applicationSession = session;
+    setApplicationSessionCookie(res, {
+      applicationId: session.applicationId,
+      mobile: session.mobile,
+    });
+    return next();
+  }
+
+  if (!requestedApplicationId) {
+    return res.status(401).json({
+      success: false,
+      message: "Application session expired. Please start again.",
+    });
+  }
+
+  const requestMobile = normalizeMobile(getHeaderValue(req, "x-application-mobile"));
+  const requestEmail = normalizeEmail(getHeaderValue(req, "x-application-email"));
+
+  if (!requestMobile && !requestEmail) {
+    return res.status(401).json({
+      success: false,
+      message: "Application session expired. Please start again.",
+    });
+  }
+
+  try {
+    const application = await getApplicationById(requestedApplicationId);
+    const applicationMobile = normalizeMobile(application?.mobile);
+    const applicationEmail = normalizeEmail(application?.email);
+    const mobileMatches = requestMobile && applicationMobile && requestMobile === applicationMobile;
+    const emailMatches = requestEmail && applicationEmail && requestEmail === applicationEmail;
+
+    if (!application || (!mobileMatches && !emailMatches)) {
+      return res.status(401).json({
+        success: false,
+        message: "Application session expired. Please start again.",
+      });
+    }
+
+    req.applicationSession = {
+      applicationId: application.application_id || requestedApplicationId,
+      mobile: applicationMobile,
+      recovered: true,
+    };
+    setApplicationSessionCookie(res, {
+      applicationId: application.application_id || requestedApplicationId,
+      mobile: applicationMobile,
+    });
+    return next();
+  } catch (error) {
+    return next(error);
+  }
 };

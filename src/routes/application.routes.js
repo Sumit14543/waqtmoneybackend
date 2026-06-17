@@ -4,7 +4,10 @@ import fs from "fs";
 import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
-import { requireApplicationSession } from "../middleware/applicationSession.middleware.js";
+import {
+  requireApplicationSession,
+  requireApplicationSessionOrMatchingContact,
+} from "../middleware/applicationSession.middleware.js";
 import {
   applyLoan,
   createRepaymentPaymentOrder,
@@ -140,7 +143,7 @@ router.put("/bank-details", requireApplicationSession, updateBankDetailsApp);
 router.put("/reference-details", requireApplicationSession, updateReferenceDetailsApp);
 
 // Selfie verification plus one optional salary slip upload
-router.post("/upload-docs", requireApplicationSession, documentUpload.any(), (req, res, next) => {
+router.post("/upload-docs", requireApplicationSessionOrMatchingContact, documentUpload.any(), (req, res, next) => {
   const parseDocumentTypes = () => {
     try {
       return JSON.parse(req.body.documentTypes || "[]");
@@ -170,7 +173,7 @@ router.post("/upload-docs", requireApplicationSession, documentUpload.any(), (re
   next();
 }, updateApp);
 
-router.post("/upload-video-kyc", requireApplicationSession, videoUpload.single("video"), (req, res, next) => {
+router.post("/upload-video-kyc", requireApplicationSessionOrMatchingContact, videoUpload.single("video"), (req, res, next) => {
   if (!req.file) {
     return res.status(400).json({
       success: false,
