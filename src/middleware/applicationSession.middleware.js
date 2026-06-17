@@ -227,6 +227,15 @@ const isRecentDraftApplication = (application) => {
   return Number.isFinite(activityTime) && Date.now() - activityTime <= DRAFT_UPLOAD_RECOVERY_TTL_MS;
 };
 
+const isActiveDraftApplication = (application) => {
+  if (!application) return false;
+  if (Number(application.lead_visible || 0) === 1) return false;
+  if (application.completed_at) return false;
+
+  const step = String(application.current_step || "").toLowerCase();
+  return !["video_kyc_completed", "loan_closed", "rejected", "cancelled"].includes(step);
+};
+
 export const requireApplicationSessionOrMatchingContact = async (req, res, next) => {
   const requestedApplicationId =
     getRequestedApplicationId(req) || getHeaderValue(req, "x-application-id");
@@ -279,14 +288,15 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
     try {
       const application = await getApplicationById(requestedApplicationId);
 
-      if (isRecentDraftApplication(application)) {
+      if (isRecentDraftApplication(application) || isActiveDraftApplication(application)) {
         const applicationMobile = normalizeMobile(application.mobile);
 
         req.applicationSession = {
           applicationId: application.application_id || requestedApplicationId,
           mobile: applicationMobile,
           recovered: true,
-          viaRecentDraft: true,
+          viaRecentDraft: isRecentDraftApplication(application),
+          viaDraftApplication: !isRecentDraftApplication(application),
         };
         setApplicationSessionCookie(res, {
           applicationId: application.application_id || requestedApplicationId,
@@ -310,7 +320,11 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
     const emailMatches = requestEmail && applicationEmail && requestEmail === applicationEmail;
     const panMatches = requestPan && applicationPan && requestPan === applicationPan;
 
-    if (!application || (!mobileMatches && !emailMatches && !panMatches)) {
+    if (!application) {
+      return rejectRecoveredSession(req, res);
+    }
+
+    if (!mobileMatches && !emailMatches && !panMatches && !isActiveDraftApplication(application)) {
       return rejectRecoveredSession(req, res);
     }
 
@@ -318,6 +332,7 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
       applicationId: application.application_id || requestedApplicationId,
       mobile: applicationMobile,
       recovered: true,
+      viaDraftApplication: !mobileMatches && !emailMatches && !panMatches,
     };
     setApplicationSessionCookie(res, {
       applicationId: application.application_id || requestedApplicationId,

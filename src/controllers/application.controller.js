@@ -154,6 +154,15 @@ const isRecoverableDraftApplication = (application) => {
   return Number.isFinite(activityTime) && Date.now() - activityTime <= DRAFT_SESSION_RECOVERY_TTL_MS;
 };
 
+const isActiveDraftApplication = (application) => {
+  if (!application) return false;
+  if (Number(application.lead_visible || 0) === 1) return false;
+  if (application.completed_at) return false;
+
+  const step = String(application.current_step || "").toLowerCase();
+  return !["video_kyc_completed", "loan_closed", "rejected", "cancelled"].includes(step);
+};
+
 const sendRecoveredApplicationSession = (res, application, applicationId) => {
   const recoveredApplicationId = application?.application_id || applicationId;
   const recoveredMobile = normalizeSessionMobile(application?.mobile);
@@ -199,7 +208,7 @@ export const recoverApplicationSession = async (req, res, next) => {
     }
 
     if (!requestMobile && !requestEmail && !requestPan) {
-      if (isRecoverableDraftApplication(application)) {
+      if (isRecoverableDraftApplication(application) || isActiveDraftApplication(application)) {
         return sendRecoveredApplicationSession(res, application, applicationId);
       }
 
@@ -216,7 +225,7 @@ export const recoverApplicationSession = async (req, res, next) => {
     const emailMatches = requestEmail && applicationEmail && requestEmail === applicationEmail;
     const panMatches = requestPan && applicationPan && requestPan === applicationPan;
 
-    if (!application || (!mobileMatches && !emailMatches && !panMatches)) {
+    if (!application || (!mobileMatches && !emailMatches && !panMatches && !isActiveDraftApplication(application))) {
       return res.status(401).json({
         success: false,
         message: "Application session expired. Please start again.",
