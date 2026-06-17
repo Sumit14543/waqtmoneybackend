@@ -185,6 +185,9 @@ const getHeaderValue = (req, name) => String(req.headers[name] || "").trim();
 const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 const normalizePan = (value) => String(value || "").trim().toUpperCase();
+const DRAFT_UPLOAD_RECOVERY_TTL_MS = Number(
+  process.env.DRAFT_UPLOAD_RECOVERY_TTL_MS || 72 * 60 * 60 * 1000
+);
 const cleanupUploadedFiles = async (req) => {
   const files = [
     ...(Array.isArray(req.files) ? req.files : []),
@@ -208,6 +211,19 @@ const rejectRecoveredSession = async (req, res, statusCode = 401) => {
         ? "This application session does not match the request."
         : "Application session expired. Please start again.",
   });
+};
+
+const isRecentDraftApplication = (application) => {
+  if (!application) return false;
+  if (Number(application.lead_visible || 0) === 1) return false;
+  if (application.completed_at) return false;
+  if (application.current_step === "video_kyc_completed") return false;
+  if (!application.mobile && !application.email) return false;
+
+  const activityDate = application.last_activity_at || application.created_at;
+  const activityTime = activityDate ? new Date(activityDate).getTime() : 0;
+
+  return Number.isFinite(activityTime) && Date.now() - activityTime <= DRAFT_UPLOAD_RECOVERY_TTL_MS;
 };
 
 export const requireApplicationSessionOrMatchingContact = async (req, res, next) => {
@@ -259,6 +275,28 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
   );
 
   if (!requestMobile && !requestEmail && !requestPan) {
+    try {
+      const application = await getApplicationById(requestedApplicationId);
+
+      if (isRecentDraftApplication(application)) {
+        const applicationMobile = normalizeMobile(application.mobile);
+
+        req.applicationSession = {
+          applicationId: application.application_id || requestedApplicationId,
+          mobile: applicationMobile,
+          recovered: true,
+          viaRecentDraft: true,
+        };
+        setApplicationSessionCookie(res, {
+          applicationId: application.application_id || requestedApplicationId,
+          mobile: applicationMobile,
+        });
+        return next();
+      }
+    } catch (error) {
+      return next(error);
+    }
+
     return rejectRecoveredSession(req, res);
   }
 
