@@ -516,72 +516,60 @@ export const checkActiveApplicationInCrmTables = async (leadData) => {
   const phone = String(leadData.phone || leadData.mobile || "").replace(/\D/g, "").slice(-10);
   const email = String(leadData.email || "").trim().toLowerCase();
 
-  // 1. Find the CRM leads table name (common names: leads, crm_leads)
-  let tableName = null;
+  const INACTIVE_STATUSES = ["rejected", "closed", "cancelled", "deleted", "trash"];
+
+  // 1. Check if CRM's loan_applications table exists in the database
+  let crmTableExists = false;
   try {
     const [tables] = await db.query(
       `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES 
        WHERE TABLE_SCHEMA = DATABASE() 
-         AND TABLE_NAME IN ('leads', 'crm_leads')`
+         AND TABLE_NAME = 'loan_applications'`
     );
 
     if (tables && tables.length > 0) {
-      tableName = tables[0].TABLE_NAME;
+      crmTableExists = true;
     }
   } catch (err) {
     logger.error("Failed to query information_schema for CRM tables:", err.message);
   }
 
-  if (tableName) {
-    // 2. Get the columns of this table to find the phone and email columns
-    let phoneCol = null;
-    let emailCol = null;
-    try {
-      const [columns] = await db.query(
-        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
-        [tableName]
-      );
-
-      phoneCol = columns.find(c => {
-        const name = String(c.COLUMN_NAME || "").toLowerCase();
-        return name === 'phone' || name === 'mobile' || name === 'phone_number' || name === 'mobile_number';
-      })?.COLUMN_NAME;
-
-      emailCol = columns.find(c => {
-        const name = String(c.COLUMN_NAME || "").toLowerCase();
-        return name === 'email' || name === 'email_address';
-      })?.COLUMN_NAME;
-    } catch (err) {
-      logger.error(`Failed to query columns of CRM table ${tableName}:`, err.message);
-    }
-
-    // 3. Query the table
-    if (phone && phoneCol) {
+  if (crmTableExists) {
+    // 2. Query the table for mobile number duplicate check (excluding inactive statuses)
+    if (phone) {
       const [phoneRows] = await db.query(
-        `SELECT * FROM \`${tableName}\` WHERE \`${phoneCol}\` LIKE ? LIMIT 1`,
+        `SELECT status FROM \`loan_applications\` WHERE \`mobile\` LIKE ? LIMIT 1`,
         [`%${phone}%`]
       );
+
       if (phoneRows.length > 0) {
-        const error = new Error(`You have already applied for a loan with this number.`);
-        error.statusCode = 409;
-        throw error;
+        const status = String(phoneRows[0].status || "").toLowerCase();
+        if (!INACTIVE_STATUSES.includes(status)) {
+          const error = new Error(`You have already applied for a loan with this number.`);
+          error.statusCode = 409;
+          throw error;
+        }
       }
     }
 
-    if (email && emailCol) {
+    // 3. Query the table for email duplicate check (excluding inactive statuses)
+    if (email) {
       const [emailRows] = await db.query(
-        `SELECT * FROM \`${tableName}\` WHERE \`${emailCol}\` = ? LIMIT 1`,
+        `SELECT status FROM \`loan_applications\` WHERE \`email\` = ? LIMIT 1`,
         [email]
       );
+
       if (emailRows.length > 0) {
-        const error = new Error(`You have already applied with this email.`);
-        error.statusCode = 409;
-        throw error;
+        const status = String(emailRows[0].status || "").toLowerCase();
+        if (!INACTIVE_STATUSES.includes(status)) {
+          const error = new Error(`You have already applied with this email.`);
+          error.statusCode = 409;
+          throw error;
+        }
       }
     }
     
-    // If table existed and checked successfully but record wasn't found, return success!
+    // If table existed and checked successfully but no active record was found, return success!
     return { exists: false };
   }
 

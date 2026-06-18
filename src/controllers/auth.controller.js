@@ -726,7 +726,7 @@ export const signup = async (req, res) => {
       if (isActiveApplicationError(err)) {
         return res.status(409).json({
           success: false,
-          message: ACTIVE_APPLICATION_MESSAGE,
+          message: err.message || ACTIVE_APPLICATION_MESSAGE,
         });
       }
 
