@@ -578,20 +578,13 @@ export const checkActiveApplicationInCrmTables = async (leadData) => {
 };
 
 export const checkActiveApplicationInCRM = async (leadData) => {
-  // 1. Try checking CRM database tables directly first (if database is shared)
-  try {
-    const tableCheck = await checkActiveApplicationInCrmTables(leadData);
-    if (tableCheck) {
-      return tableCheck;
-    }
-  } catch (dbError) {
-    if (dbError.statusCode === 409) {
-      throw dbError;
-    }
-    logger.error("CRM database tables query failed, falling back to API:", dbError.message);
+  if (process.env.BYPASS_DUPLICATE_CHECK === "true") {
+    logger.info("Bypassing active application check because BYPASS_DUPLICATE_CHECK is true");
+    return { exists: false };
   }
 
-  // 2. Fallback to CRM API if CRM tables do not exist
+  // Rely strictly on the CRM API check. Local database duplicate checks are bypassed
+  // as CRM is the single source of truth for active/deleted/rejected applications.
   const results = [];
 
   for (const endpoint of CRM_ACTIVE_APPLICATION_ENDPOINTS) {

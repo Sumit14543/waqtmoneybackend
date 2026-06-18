@@ -232,63 +232,17 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
     crmStatus.loanAmount,
     repayment.principalDue
   );
-  let finalTenureDays =
+  const finalTenureDays =
     repayment.tenureDays ||
     firstNumber(crmStatus.sanction?.tenureDays, crmStatus.sanction?.tenure_days, crmStatus.tenureDays, crmStatus.tenure_days);
 
-  if (!finalTenureDays) {
-    const finalDueDate = repayment.dueDate || crmStatus.sanction?.dueDate || crmStatus.disbursement?.dueDate;
-    const finalStartDate =
-      crmStatus.disbursement?.disbursedAt ||
-      crmStatus.disbursement?.disbursalDate ||
-      crmStatus.disbursement?.disbursementDate ||
-      crmStatus.sanction?.disbursedAt ||
-      crmStatus.sanction?.disbursalDate ||
-      crmStatus.sanction?.disbursementDate ||
-      crmStatus.disbursedAt ||
-      crmStatus.disbursalDate ||
-      crmStatus.disbursementDate ||
-      crmStatus.createdAt;
-
-    if (finalDueDate && finalStartDate) {
-      const due = new Date(finalDueDate);
-      const start = new Date(finalStartDate);
-      if (!Number.isNaN(due.getTime()) && !Number.isNaN(start.getTime())) {
-        const dueIST = new Date(due.getTime() + 5.5 * 60 * 60 * 1000);
-        const startIST = new Date(start.getTime() + 5.5 * 60 * 60 * 1000);
-        const dueD = new Date(dueIST.getUTCFullYear(), dueIST.getUTCMonth(), dueIST.getUTCDate());
-        const startD = new Date(startIST.getUTCFullYear(), startIST.getUTCMonth(), startIST.getUTCDate());
-        const diffMs = dueD.getTime() - startD.getTime();
-        finalTenureDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
-      }
-    }
-  }
-
-  if (!finalTenureDays) {
-    finalTenureDays = Number(process.env.REPAYMENT_TENURE_DAYS || 32);
-  }
-
-  let finalInterestAccrued =
+  const finalInterestAccrued =
     repayment.interestAccrued ||
     firstNumber(crmStatus.sanction?.interestAccrued, crmStatus.sanction?.interest_accrued, crmStatus.interestAccrued, crmStatus.interest_accrued);
 
-  if (!finalInterestAccrued && approvedLoanAmount > 0 && totalAmount > approvedLoanAmount) {
-    finalInterestAccrued = totalAmount - approvedLoanAmount;
-  }
-
-  let finalInterestRate =
+  const finalInterestRate =
     repayment.interestRate ||
     firstNumber(crmStatus.sanction?.interestRate, crmStatus.sanction?.interest_rate, crmStatus.interestRate, crmStatus.interest_rate);
-
-  if (!finalInterestRate && approvedLoanAmount > 0 && totalAmount > approvedLoanAmount && finalTenureDays > 0) {
-    const totalInterest = totalAmount - approvedLoanAmount;
-    const dailyRate = (totalInterest / approvedLoanAmount / finalTenureDays) * 100;
-    finalInterestRate = Number(dailyRate.toFixed(2));
-  }
-
-  if (!finalInterestRate) {
-    finalInterestRate = Number(process.env.REPAYMENT_DAILY_INTEREST_RATE || process.env.SANCTION_DAILY_INTEREST_RATE || 1.0);
-  }
 
   const displayInterestRate = finalInterestRate ? (String(finalInterestRate).includes("%") ? String(finalInterestRate) : `${finalInterestRate}%`) : "";
   const repaymentStatus = repayment.status;

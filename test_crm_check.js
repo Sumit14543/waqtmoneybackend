@@ -29,7 +29,8 @@ async function checkCrm(baseUrl, name) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-integration-api-key": INTEGRATION_API_KEYS
+        "x-integration-api-key": INTEGRATION_API_KEYS,
+        "Authorization": `Bearer ${INTEGRATION_API_KEYS}`
       },
       body: JSON.stringify(payload)
     });

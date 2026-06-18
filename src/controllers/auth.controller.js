@@ -711,8 +711,7 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     sanction.agreementNumber ||
     "";
 
-  // Calculate tenure days using date components in IST to align with user UI
-  let tenureDays = firstPositiveNumber(
+  const tenureDays = firstPositiveNumber(
     repayment.tenureDays,
     repayment.tenure_days,
     repayment.tenure,
@@ -724,28 +723,7 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     crmStatus?.tenure
   );
 
-  if (!tenureDays) {
-    const finalDueDate = repayment.dueDate || repayment.repaymentDueDate || sanction.dueDate || crmStatus?.disbursement?.dueDate;
-    const finalStartDate = getCrmDisbursalDate(crmStatus) || crmStatus?.createdAt || loan.submit_at || loan.created_at;
-    if (finalDueDate && finalStartDate) {
-      const due = new Date(finalDueDate);
-      const start = new Date(finalStartDate);
-      if (!Number.isNaN(due.getTime()) && !Number.isNaN(start.getTime())) {
-        const dueIST = new Date(due.getTime() + 5.5 * 60 * 60 * 1000);
-        const startIST = new Date(start.getTime() + 5.5 * 60 * 60 * 1000);
-        const dueD = new Date(dueIST.getUTCFullYear(), dueIST.getUTCMonth(), dueIST.getUTCDate());
-        const startD = new Date(startIST.getUTCFullYear(), startIST.getUTCMonth(), startIST.getUTCDate());
-        const diffMs = dueD.getTime() - startD.getTime();
-        tenureDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
-      }
-    }
-  }
-
-  if (!tenureDays) {
-    tenureDays = Number(process.env.REPAYMENT_TENURE_DAYS || 32);
-  }
-
-  let interestRate = firstPositiveNumber(
+  const interestRate = firstPositiveNumber(
     repayment.interestRate,
     repayment.interest_rate,
     sanction.interestRate,
@@ -754,20 +732,9 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     crmStatus?.interest_rate
   );
 
-  if (!interestRate && approvedLoanAmount > 0 && totalRepayableAmount > approvedLoanAmount && tenureDays > 0) {
-    const totalInterest = totalRepayableAmount - approvedLoanAmount;
-    const dailyRate = (totalInterest / approvedLoanAmount / tenureDays) * 100;
-    interestRate = Number(dailyRate.toFixed(2));
-  }
-
-  if (!interestRate) {
-    interestRate = Number(process.env.REPAYMENT_DAILY_INTEREST_RATE || process.env.SANCTION_DAILY_INTEREST_RATE || 1.0);
-  }
-
-  // Format interest rate to display as percentage nicely if not already done
   const displayInterestRate = interestRate ? (String(interestRate).includes("%") ? String(interestRate) : `${interestRate}%`) : "";
 
-  let interestAccrued = firstPositiveNumber(
+  const interestAccrued = firstPositiveNumber(
     repayment.interestAccrued,
     repayment.interest_accrued,
     sanction.interestAccrued,
@@ -775,10 +742,6 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     crmStatus?.interestAccrued,
     crmStatus?.interest_accrued
   );
-
-  if (!interestAccrued && approvedLoanAmount > 0 && totalRepayableAmount > approvedLoanAmount) {
-    interestAccrued = totalRepayableAmount - approvedLoanAmount;
-  }
 
   return {
     id: applicationId,
