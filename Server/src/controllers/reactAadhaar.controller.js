@@ -22,17 +22,6 @@ const badRequest = (message) => {
   return error;
 };
 
-const conflict = (message) => {
-  const error = new Error(message);
-  error.statusCode = 409;
-  return error;
-};
-
-const RUNNING_LOAN_MESSAGE =
-  "This Aadhaar number is already registered. Please use a different Aadhaar number.";
-const FINAL_SUBMITTED_APPLICATION_CONDITION =
-  "(lead_visible = 1 OR current_step = 'video_kyc_completed' OR completed_at IS NOT NULL)";
-
 const buildApplicationLookup = (value) => {
   const lookupValue = String(value || "").trim();
 
@@ -357,24 +346,6 @@ export const startReactAadhaarVerification = async (req, res, next) => {
     const masked = `XXXXXXXX${aadhaar.slice(-4)}`;
     const encryptedAadhaar = encryptData(aadhaar);
     const lookup = buildApplicationLookup(applicationId);
-    const [duplicateRows] = await db.execute(
-      `SELECT id, application_id
-       FROM ${APPLICATION_TABLE}
-       WHERE aadhaar_number = ?
-         AND aadhaar_number IS NOT NULL
-         AND aadhaar_number <> ''
-         AND ${FINAL_SUBMITTED_APPLICATION_CONDITION}
-         AND COALESCE(current_step, '') NOT IN ('loan_closed', 'rejected', 'cancelled')
-         AND NOT (${lookup.clause})
-       ORDER BY last_activity_at DESC, id DESC
-       LIMIT 1`,
-      [encryptedAadhaar, ...lookup.values]
-    );
-
-    if (duplicateRows.length > 0) {
-      throw conflict(RUNNING_LOAN_MESSAGE);
-    }
-
     const [updateResult] = await db.execute(
       `UPDATE ${APPLICATION_TABLE}
        SET aadhaar_number = ?,

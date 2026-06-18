@@ -10,6 +10,7 @@ import {
 } from "../configs/integrations.js";
 import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 import { fetchCrmRepaymentDetails } from "../services/repayment.service.js";
+import { ACTIVE_APPLICATION_MESSAGE, checkActiveApplicationInCRM } from "../services/crm.service.js";
 import { parseCookies } from "../utils/cookies.js";
 
 const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
@@ -20,6 +21,10 @@ const getSafeErrorMessage = (err, fallback = "Something went wrong. Please try a
   isProduction() && (err.statusCode || err.status || 500) >= 500
     ? fallback
     : err.message || fallback;
+
+const isActiveApplicationError = (err) =>
+  Number(err?.statusCode || err?.status) === 409 ||
+  err?.message === ACTIVE_APPLICATION_MESSAGE;
 
 const ensureDashboardApplicationColumns = async () => {
   const columns = [
@@ -288,12 +293,39 @@ const firstPositiveNumber = (...values) => {
 
 const getCrmRepaymentOutstanding = (crmStatus = {}) => {
   const repayment = crmStatus.repayment || {};
-  const directOutstanding = firstPositiveNumber(repayment.balanceAmount);
+  const directOutstanding = firstPositiveNumber(
+    repayment.balanceAmount,
+    repayment.balance_amount,
+    repayment.outstanding,
+    repayment.outstandingAmount,
+    repayment.outstanding_amount,
+    repayment.nextPaymentAmount,
+    repayment.next_payment_amount
+  );
 
   if (directOutstanding > 0) return directOutstanding;
 
-  const totalDue = toFiniteNumber(repayment.totalAmount);
-  const paidAmount = toFiniteNumber(repayment.paidAmount);
+  const totalDue = firstPositiveNumber(
+    repayment.totalAmount,
+    repayment.total_amount,
+    repayment.dueAmount,
+    repayment.due_amount,
+    repayment.totalDue,
+    repayment.total_due,
+    repayment.maturityAmount,
+    repayment.maturity_amount,
+    repayment.repaymentAmount,
+    repayment.repayment_amount
+  );
+  const paidAmount = toFiniteNumber(
+    repayment.paidAmount !== undefined && repayment.paidAmount !== null
+      ? repayment.paidAmount
+      : repayment.amountPaid ??
+        repayment.amount_paid ??
+        repayment.paid_amount ??
+        repayment.repaymentPaidAmount ??
+        repayment.repayment_paid_amount
+  );
 
   return Math.max(0, Number((totalDue - paidAmount).toFixed(2)));
 };
@@ -618,11 +650,28 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     crmStatus?.approvedLoanAmount,
     crmStatus?.approvedAmount,
     crmStatus?.sanctionedAmount,
-    amount
+    loan.loan_amount
+  );
+  const totalRepayableAmount = firstPositiveNumber(
+    repayment.totalAmount,
+    repayment.total_amount,
+    repayment.dueAmount,
+    repayment.due_amount,
+    repayment.totalDue,
+    repayment.total_due,
+    repayment.maturityAmount,
+    repayment.maturity_amount,
+    repayment.repaymentAmount,
+    repayment.repayment_amount,
+    sanction.repaymentAmount,
+    sanction.maturityAmount,
+    crmStatus?.maturityAmount,
+    crmStatus?.totalRepayableAmount
   );
   const crmOutstandingAmount = firstPositiveNumber(
     repayment.balanceAmount,
     repayment.balance_amount,
+    repayment.outstanding,
     repayment.outstandingAmount,
     repayment.outstanding_amount,
     repayment.nextPaymentAmount,
@@ -630,19 +679,15 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     getCrmRepaymentOutstanding(crmStatus || {})
   );
   const repaymentAmount = Math.round(crmOutstandingAmount);
-  const paidAmount = firstPositiveNumber(
-    repayment.paidAmount,
-    repayment.paid_amount,
-    repayment.amountPaid,
-    repayment.amount_paid
-  );
-  const totalRepayableAmount = firstPositiveNumber(
-    repayment.totalAmount,
-    repayment.total_amount,
-    repayment.totalDue,
-    repayment.total_due,
-    repayment.maturityAmount,
-    repayment.maturity_amount
+  const paidAmount = toFiniteNumber(
+    repayment.paidAmount !== undefined && repayment.paidAmount !== null
+      ? repayment.paidAmount
+      : repayment.amountPaid ??
+        repayment.amount_paid ??
+        repayment.paid_amount ??
+        repayment.repaymentPaidAmount ??
+        repayment.repayment_paid_amount ??
+        loan.repayment_paid_amount
   );
   const dueDate =
     repayment.repaymentDueDate ||
@@ -666,6 +711,38 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     sanction.agreementNumber ||
     "";
 
+  const tenureDays = firstPositiveNumber(
+    repayment.tenureDays,
+    repayment.tenure_days,
+    repayment.tenure,
+    sanction.tenureDays,
+    sanction.tenure_days,
+    sanction.tenure,
+    crmStatus?.tenureDays,
+    crmStatus?.tenure_days,
+    crmStatus?.tenure
+  );
+
+  const interestRate = firstPositiveNumber(
+    repayment.interestRate,
+    repayment.interest_rate,
+    sanction.interestRate,
+    sanction.interest_rate,
+    crmStatus?.interestRate,
+    crmStatus?.interest_rate
+  );
+
+  const displayInterestRate = interestRate ? (String(interestRate).includes("%") ? String(interestRate) : `${interestRate}%`) : "";
+
+  const interestAccrued = firstPositiveNumber(
+    repayment.interestAccrued,
+    repayment.interest_accrued,
+    sanction.interestAccrued,
+    sanction.interest_accrued,
+    crmStatus?.interestAccrued,
+    crmStatus?.interest_accrued
+  );
+
   return {
     id: applicationId,
     loanId,
@@ -682,10 +759,10 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     repaymentAmount,
     paidAmount,
     dueDate,
-    tenureDays: "",
-    interestRate: "",
-    interestAccrued: "",
-    disbursalDate: getCrmDisbursalDate(crmStatus) || loan.disbursal_date || loan.submit_at || loan.created_at || loan.updated_at,
+    tenureDays: tenureDays ? String(tenureDays) : "",
+    interestRate: displayInterestRate,
+    interestAccrued,
+    disbursalDate: getCrmDisbursalDate(crmStatus) || loan.disbursal_date || "",
     crmRepaymentDetails: null,
     crmStatus: dashboardCrmStatus,
   };
@@ -704,9 +781,36 @@ export const signup = async (req, res) => {
       });
     }
 
+    try {
+      await checkActiveApplicationInCRM({
+        name,
+        fullName: name,
+        full_name: name,
+        email,
+        mobile,
+        phone: mobile,
+        sourceSystem: "waqtmoney",
+        source: "waqtmoney",
+        loanType: "payday",
+        loan_type: "payday",
+      });
+    } catch (err) {
+      if (isActiveApplicationError(err)) {
+        return res.status(409).json({
+          success: false,
+          message: err.message || ACTIVE_APPLICATION_MESSAGE,
+        });
+      }
+
+      throw err;
+    }
+
     const [existingUsers] = await db.query("SELECT * FROM users WHERE mobile=?", [mobile]);
     if (existingUsers.length > 0) {
-      return res.status(400).json({ message: "Mobile number already registered" });
+      return res.status(409).json({
+        success: false,
+        message: "This mobile number already has an account. Please login to continue.",
+      });
     }
 
     const hashed = await bcrypt.hash(password, 10);

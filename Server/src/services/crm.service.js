@@ -1,7 +1,10 @@
 import logger from "../utils/logger.js";
 import crypto from "crypto";
-import { CRM_LEADS_API_URLS } from "../configs/integrations.js";
-import { getAppSecret } from "../configs/secrets.js";
+import db from "../configs/db.js";
+import {
+  CRM_ACTIVE_APPLICATION_API_URLS,
+  CRM_CREATE_LEAD_API_URLS,
+} from "../configs/integrations.js";
 
 const firstPresent = (...values) =>
   values.find((value) => value !== undefined && value !== null && value !== "");
@@ -11,6 +14,12 @@ const asNumber = (...values) => Number(firstPresent(...values) ?? 0);
 const phone10 = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const onlyDigits = (value) => String(value || "").replace(/\D/g, "");
 const pad2 = (value) => String(value).padStart(2, "0");
+export const ACTIVE_APPLICATION_MESSAGE = "You have already applied for a loan.";
+
+const isActiveApplicationMessage = (value) =>
+  /already\s+(?:registered|appl(?:y|ied)|have|exist)|different\s+number|active\s+application/i.test(
+    String(value || "")
+  );
 
 const decryptAadhaarNumber = (value) => {
   const encrypted = String(value || "").trim();
@@ -221,10 +230,12 @@ const buildTestingPayload = (lead) => {
 
     panNumber,
     pan_number: panNumber,
+    pan: panNumber,
     uanNumber,
     uan_number: uanNumber,
     aadhaarNumber,
     aadhaar_number: aadhaarNumber,
+    aadhaar: aadhaarNumber || aadhaarUniqueId,
     aadharNumber: aadhaarNumber,
     aadhar_number: aadhaarNumber,
     aadhaarVerified,
@@ -342,12 +353,56 @@ const buildTestingPayload = (lead) => {
   };
 };
 
-const CRM_ENDPOINTS = CRM_LEADS_API_URLS.map((url, index) => ({
+const createActiveApplicationError = (details = {}) => {
+  const error = new Error(ACTIVE_APPLICATION_MESSAGE);
+  error.statusCode = 409;
+  error.details = details;
+  return error;
+};
+
+const isActiveApplicationResponse = (result = {}) =>
+  result?.statusCode === 409 ||
+  result?.status === 409 ||
+  result?.blockedDuplicate === true ||
+  result?.data?.exists === true ||
+  result?.exists === true ||
+  isActiveApplicationMessage(result?.data?.message) ||
+  isActiveApplicationMessage(result?.message);
+
+const buildActiveApplicationPayload = (lead) => {
+  const payload = buildTestingPayload(lead);
+  const aadhaar =
+    payload.aadhaarNumber ||
+    payload.aadhaar_number ||
+    payload.aadharNumber ||
+    payload.aadhar_number ||
+    payload.aadhaarUniqueId ||
+    payload.aadhaar_unique_id ||
+    "";
+
+  return {
+    phone: payload.phone || payload.mobile || "",
+    email: payload.email || "",
+    pan: payload.panNumber || payload.pan_number || payload.pan || "",
+    aadhaar,
+  };
+};
+
+const CRM_ENDPOINTS = CRM_CREATE_LEAD_API_URLS.map((url, index) => ({
     name: index === 0 ? "waqtmoney-primary" : `waqtmoney-fallback-${index}`,
     url,
     keyEnvs: ["INTEGRATION_API_KEYS", "INTEGRATION_API_KEY", "CRM_INTEGRATION_API_KEY"],
     keyHeader: "x-integration-api-key",
     payload: buildTestingPayload,
+    primary: index === 0,
+  }));
+
+const CRM_ACTIVE_APPLICATION_ENDPOINTS = CRM_ACTIVE_APPLICATION_API_URLS.map((url, index) => ({
+    name: index === 0 ? "waqtmoney-active-primary" : `waqtmoney-active-fallback-${index}`,
+    url,
+    keyEnvs: ["INTEGRATION_API_KEYS", "INTEGRATION_API_KEY", "CRM_INTEGRATION_API_KEY"],
+    keyHeader: "x-integration-api-key",
+    payload: buildActiveApplicationPayload,
     primary: index === 0,
   }));
 
@@ -412,6 +467,10 @@ const syncEndpoint = async (endpoint, leadData) => {
       endpoint: endpoint.name,
       ok: response.ok,
       statusCode: response.status,
+      blockedDuplicate:
+        response.status === 409 ||
+        data?.exists === true ||
+        isActiveApplicationMessage(data?.message),
       data,
     };
   } catch (error) {
@@ -433,6 +492,7 @@ const syncLeadToCRM = async (leadData) => {
     for (const endpoint of CRM_ENDPOINTS) {
       const result = await syncEndpoint(endpoint, leadData);
       results.push(result);
+      if (result.blockedDuplicate) break;
       if (result.ok) break;
     }
 
@@ -450,6 +510,126 @@ const syncLeadToCRM = async (leadData) => {
       message: error.message,
     };
   }
+};
+
+export const checkActiveApplicationInCrmTables = async (leadData) => {
+  const phone = String(leadData.phone || leadData.mobile || "").replace(/\D/g, "").slice(-10);
+  const email = String(leadData.email || "").trim().toLowerCase();
+
+  const INACTIVE_STATUSES = ["rejected", "closed", "cancelled", "deleted", "trash"];
+
+  // 1. Check if CRM's loan_applications table exists in the database
+  let crmTableExists = false;
+  try {
+    const [tables] = await db.query(
+      `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES 
+       WHERE TABLE_SCHEMA = DATABASE() 
+         AND TABLE_NAME = 'loan_applications'`
+    );
+
+    if (tables && tables.length > 0) {
+      crmTableExists = true;
+    }
+  } catch (err) {
+    logger.error("Failed to query information_schema for CRM tables:", err.message);
+  }
+
+  if (crmTableExists) {
+    // 2. Query the table for mobile number duplicate check (excluding inactive statuses)
+    if (phone) {
+      const [phoneRows] = await db.query(
+        `SELECT status FROM \`loan_applications\` WHERE \`mobile\` LIKE ? LIMIT 1`,
+        [`%${phone}%`]
+      );
+
+      if (phoneRows.length > 0) {
+        const status = String(phoneRows[0].status || "").toLowerCase();
+        if (!INACTIVE_STATUSES.includes(status)) {
+          const error = new Error(`You have already applied for a loan with this number.`);
+          error.statusCode = 409;
+          throw error;
+        }
+      }
+    }
+
+    // 3. Query the table for email duplicate check (excluding inactive statuses)
+    if (email) {
+      const [emailRows] = await db.query(
+        `SELECT status FROM \`loan_applications\` WHERE \`email\` = ? LIMIT 1`,
+        [email]
+      );
+
+      if (emailRows.length > 0) {
+        const status = String(emailRows[0].status || "").toLowerCase();
+        if (!INACTIVE_STATUSES.includes(status)) {
+          const error = new Error(`You have already applied with this email.`);
+          error.statusCode = 409;
+          throw error;
+        }
+      }
+    }
+    
+    // If table existed and checked successfully but no active record was found, return success!
+    return { exists: false };
+  }
+
+  // Fallback to API if table doesn't exist
+  return null;
+};
+
+export const checkActiveApplicationInCRM = async (leadData) => {
+  if (process.env.BYPASS_DUPLICATE_CHECK === "true") {
+    logger.info("Bypassing active application check because BYPASS_DUPLICATE_CHECK is true");
+    return { exists: false };
+  }
+
+  // Rely strictly on the CRM API check. Local database duplicate checks are bypassed
+  // as CRM is the single source of truth for active/deleted/rejected applications.
+  const results = [];
+
+  for (const endpoint of CRM_ACTIVE_APPLICATION_ENDPOINTS) {
+    const result = await syncEndpoint(endpoint, leadData);
+    results.push(result);
+
+    if (isActiveApplicationResponse(result)) {
+      throw createActiveApplicationError({ crmActiveApplicationResults: results });
+    }
+
+    if (result.ok) {
+      return {
+        ...(result.data || {}),
+        crmActiveApplicationResults: results,
+      };
+    }
+  }
+
+  const first = results[0];
+  const error = new Error(first?.data?.message || first?.message || "Unable to validate active application in CRM");
+  error.statusCode = first?.statusCode || 502;
+  error.details = { crmActiveApplicationResults: results };
+  throw error;
+};
+
+export const submitLeadToCRM = async (leadData) => {
+  await checkActiveApplicationInCRM(leadData);
+
+  const crmSync = await syncLeadToCRM(leadData);
+
+  if (crmSync.crmSyncResults?.some(isActiveApplicationResponse) || isActiveApplicationResponse(crmSync)) {
+    throw createActiveApplicationError({ crmSyncResults: crmSync.crmSyncResults || [] });
+  }
+
+  const successfulResult = crmSync.crmSyncResults?.find((result) => result.ok);
+
+  if (!successfulResult) {
+    const first = crmSync.crmSyncResults?.[0];
+    const error = new Error(first?.data?.message || first?.message || crmSync.message || "Unable to create lead in CRM");
+    error.statusCode = first?.statusCode || 502;
+    error.details = { crmSyncResults: crmSync.crmSyncResults || [] };
+    throw error;
+  }
+
+  return crmSync;
 };
 
 export default syncLeadToCRM;

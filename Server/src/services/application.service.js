@@ -16,17 +16,6 @@ const badRequest = (message) => {
   return error;
 };
 
-const conflict = (message) => {
-  const error = new Error(message);
-  error.statusCode = 409;
-  return error;
-};
-
-const DUPLICATE_PAN_MESSAGE =
-  "This PAN number has already been used for a loan application. Please use a different PAN.";
-const RUNNING_LOAN_MESSAGE =
-  "This mobile number is already registered. Please use a different number.";
-
 const ensureApplicationTable = async () => {
   if (applicationTableReady) return;
 
@@ -93,8 +82,6 @@ const ensureApplicationTable = async () => {
 
 const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const normalizePan = (value) => String(value || "").trim().toUpperCase();
-const FINAL_SUBMITTED_APPLICATION_CONDITION =
-  "(lead_visible = 1 OR current_step = 'video_kyc_completed' OR completed_at IS NOT NULL)";
 
 const buildApplicationLookup = (value) => {
   const lookupValue = String(value || "").trim();
@@ -115,93 +102,6 @@ const buildApplicationLookup = (value) => {
 const normalizeUanNumber = (value) => {
   const digits = String(value || "").replace(/\D/g, "");
   return /^\d{12}$/.test(digits) ? digits : "";
-};
-
-const findDuplicatePanApplication = async (pan, excludeId = null) => {
-  const normalizedPan = normalizePan(pan);
-  if (!normalizedPan) return null;
-
-  await ensureApplicationTable();
-  await ensureColumns([
-    ["lead_visible", "TINYINT(1) DEFAULT 0"],
-    ["completed_at", "DATETIME NULL"],
-  ]);
-
-  const values = [normalizedPan];
-  let excludeCurrentApplication = "";
-
-  if (excludeId) {
-    const lookup = buildApplicationLookup(excludeId);
-    excludeCurrentApplication = ` AND NOT (${lookup.clause})`;
-    values.push(...lookup.values);
-  }
-
-  const [rows] = await db.execute(
-    `SELECT id, application_id
-     FROM ${APPLICATION_TABLE}
-     WHERE pan_number = ?
-       AND pan_number IS NOT NULL
-       AND pan_number <> ''
-       AND ${FINAL_SUBMITTED_APPLICATION_CONDITION}
-       ${excludeCurrentApplication}
-     ORDER BY last_activity_at DESC, id DESC
-     LIMIT 1`,
-    values
-  );
-
-  return rows[0] || null;
-};
-
-const findDuplicateMobileApplication = async (mobile, excludeId = null) => {
-  const normalizedMobile = normalizeMobile(mobile);
-  if (!/^[6-9]\d{9}$/.test(normalizedMobile)) return null;
-
-  await ensureApplicationTable();
-  await ensureColumns([
-    ["lead_visible", "TINYINT(1) DEFAULT 0"],
-    ["completed_at", "DATETIME NULL"],
-  ]);
-
-  const values = [normalizedMobile, `91${normalizedMobile}`, `+91${normalizedMobile}`];
-  let excludeCurrentApplication = "";
-
-  if (excludeId) {
-    const lookup = buildApplicationLookup(excludeId);
-    excludeCurrentApplication = ` AND NOT (${lookup.clause})`;
-    values.push(...lookup.values);
-  }
-
-  const [rows] = await db.execute(
-    `SELECT id, application_id
-     FROM ${APPLICATION_TABLE}
-     WHERE (mobile = ? OR mobile = ? OR mobile = ?)
-       AND mobile IS NOT NULL
-       AND mobile <> ''
-       AND ${FINAL_SUBMITTED_APPLICATION_CONDITION}
-       AND COALESCE(current_step, '') NOT IN ('loan_closed', 'rejected', 'cancelled')
-       ${excludeCurrentApplication}
-     ORDER BY last_activity_at DESC, id DESC
-     LIMIT 1`,
-    values
-  );
-
-  return rows[0] || null;
-};
-
-const assertPanNotAlreadyUsed = async (pan, excludeId = null) => {
-  const duplicateApplication = await findDuplicatePanApplication(pan, excludeId);
-
-  if (duplicateApplication) {
-    throw conflict(DUPLICATE_PAN_MESSAGE);
-  }
-};
-
-const assertMobileNotAlreadyUsed = async (mobile, excludeId = null) => {
-  const duplicateApplication = await findDuplicateMobileApplication(mobile, excludeId);
-
-  if (duplicateApplication) {
-    throw conflict(RUNNING_LOAN_MESSAGE);
-  }
 };
 
 const findApplicationByLookup = async (id) => {
@@ -467,7 +367,6 @@ export const updateApplication = async (id, data) => {
     if (Object.prototype.hasOwnProperty.call(data, "pan_number")) {
       data.pan_number = normalizePan(requestedPan);
     }
-    await assertPanNotAlreadyUsed(requestedPan, id);
   }
 
   if (data.current_step === "video_kyc_completed") {
@@ -898,15 +797,9 @@ export const createApplication = async (data) => {
     throw badRequest("Invalid PAN");
   }
 
-  if (pan) {
-    await assertPanNotAlreadyUsed(pan);
-  }
-
   if (!phoneRegex.test(phone)) {
     throw badRequest("Invalid Phone");
   }
-
-  await assertMobileNotAlreadyUsed(phone);
 
   const applicationId = `WAQTMN-PD-${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 90 + 10)}`;
 

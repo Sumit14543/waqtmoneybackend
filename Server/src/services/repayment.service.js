@@ -232,15 +232,19 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
     crmStatus.loanAmount,
     repayment.principalDue
   );
-  const tenureDays =
+  const finalTenureDays =
     repayment.tenureDays ||
     firstNumber(crmStatus.sanction?.tenureDays, crmStatus.sanction?.tenure_days, crmStatus.tenureDays, crmStatus.tenure_days);
-  const interestAccrued =
+
+  const finalInterestAccrued =
     repayment.interestAccrued ||
     firstNumber(crmStatus.sanction?.interestAccrued, crmStatus.sanction?.interest_accrued, crmStatus.interestAccrued, crmStatus.interest_accrued);
-  const interestRate =
+
+  const finalInterestRate =
     repayment.interestRate ||
     firstNumber(crmStatus.sanction?.interestRate, crmStatus.sanction?.interest_rate, crmStatus.interestRate, crmStatus.interest_rate);
+
+  const displayInterestRate = finalInterestRate ? (String(finalInterestRate).includes("%") ? String(finalInterestRate) : `${finalInterestRate}%`) : "";
   const repaymentStatus = repayment.status;
 
   return {
@@ -260,9 +264,9 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
     paid_amount: paidAmount,
     due_date: repayment.dueDate || "",
     repayment_due_date: repayment.dueDate || "",
-    tenure_days: tenureDays || undefined,
-    interest_rate: interestRate ? String(interestRate) : "",
-    interest_accrued: interestAccrued || undefined,
+    tenure_days: finalTenureDays || undefined,
+    interest_rate: displayInterestRate,
+    interest_accrued: finalInterestAccrued || undefined,
     repayment_status: repaymentStatus,
     payment_status: repaymentStatus,
     status: ["paid", "closed"].includes(repaymentStatus) ? "paid" : repaymentStatus,
