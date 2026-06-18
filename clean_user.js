@@ -26,6 +26,10 @@ const TABLES = {
   hero_leads: {
     name: "waqt_money_hero_leads",
     phoneColumn: "mobile",
+  },
+  crm_applications: {
+    name: "loan_applications",
+    phoneColumn: "mobile",
   }
 };
 

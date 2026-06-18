@@ -622,8 +622,7 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     sanction.sanctionedAmount,
     crmStatus?.approvedLoanAmount,
     crmStatus?.approvedAmount,
-    crmStatus?.sanctionedAmount,
-    amount
+    crmStatus?.sanctionedAmount
   );
   const crmOutstandingAmount = firstPositiveNumber(
     repayment.balanceAmount,
@@ -687,10 +686,34 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     repaymentAmount,
     paidAmount,
     dueDate,
-    tenureDays: "",
-    interestRate: "",
-    interestAccrued: "",
-    disbursalDate: getCrmDisbursalDate(crmStatus) || loan.disbursal_date || loan.submit_at || loan.created_at || loan.updated_at,
+    tenureDays: firstPositiveNumber(
+      repayment.tenureDays,
+      repayment.tenure_days,
+      repayment.tenure,
+      sanction.tenureDays,
+      sanction.tenure_days,
+      sanction.tenure,
+      crmStatus?.tenureDays,
+      crmStatus?.tenure_days,
+      crmStatus?.tenure
+    ) || "",
+    interestRate: firstPositiveNumber(
+      repayment.interestRate,
+      repayment.interest_rate,
+      sanction.interestRate,
+      sanction.interest_rate,
+      crmStatus?.interestRate,
+      crmStatus?.interest_rate
+    ) || "",
+    interestAccrued: firstPositiveNumber(
+      repayment.interestAccrued,
+      repayment.interest_accrued,
+      sanction.interestAccrued,
+      sanction.interest_accrued,
+      crmStatus?.interestAccrued,
+      crmStatus?.interest_accrued
+    ) || "",
+    disbursalDate: getCrmDisbursalDate(crmStatus) || loan.disbursal_date || "",
     crmRepaymentDetails: null,
     crmStatus: dashboardCrmStatus,
   };
@@ -764,10 +787,7 @@ export const signup = async (req, res) => {
       user,
     });
   } catch (err) {
-    res.status(err.statusCode || 500).json({
-      success: false,
-      message: getSafeErrorMessage(err),
-    });
+    res.status(500).json({ error: getSafeErrorMessage(err) });
   }
 };
 
