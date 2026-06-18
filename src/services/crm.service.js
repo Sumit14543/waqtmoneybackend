@@ -16,6 +16,11 @@ const onlyDigits = (value) => String(value || "").replace(/\D/g, "");
 const pad2 = (value) => String(value).padStart(2, "0");
 export const ACTIVE_APPLICATION_MESSAGE = "You have already applied for a loan.";
 
+const isActiveApplicationMessage = (value) =>
+  /already\s+(?:registered|appl(?:y|ied)|have|exist)|different\s+number|active\s+application/i.test(
+    String(value || "")
+  );
+
 const decryptAadhaarNumber = (value) => {
   const encrypted = String(value || "").trim();
   if (!encrypted) return "";
@@ -360,7 +365,9 @@ const isActiveApplicationResponse = (result = {}) =>
   result?.status === 409 ||
   result?.blockedDuplicate === true ||
   result?.data?.exists === true ||
-  result?.exists === true;
+  result?.exists === true ||
+  isActiveApplicationMessage(result?.data?.message) ||
+  isActiveApplicationMessage(result?.message);
 
 const buildActiveApplicationPayload = (lead) => {
   const payload = buildTestingPayload(lead);
@@ -460,7 +467,10 @@ const syncEndpoint = async (endpoint, leadData) => {
       endpoint: endpoint.name,
       ok: response.ok,
       statusCode: response.status,
-      blockedDuplicate: response.status === 409 || data?.exists === true,
+      blockedDuplicate:
+        response.status === 409 ||
+        data?.exists === true ||
+        isActiveApplicationMessage(data?.message),
       data,
     };
   } catch (error) {
