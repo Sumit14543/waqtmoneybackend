@@ -32,10 +32,9 @@ const configuredCrmBaseUrls = listFromEnv(
     process.env.CRM_API_BASE_URL,
   [],
 );
-export const CRM_API_BASE_URLS = uniqueList([
-  ...configuredCrmBaseUrls,
-  ...DEFAULT_CRM_API_BASE_URLS,
-]).map(trimTrailingSlash);
+export const CRM_API_BASE_URLS = uniqueList(
+  configuredCrmBaseUrls.length > 0 ? configuredCrmBaseUrls : DEFAULT_CRM_API_BASE_URLS
+).map(trimTrailingSlash);
 export const CRM_API_BASE_URL = CRM_API_BASE_URLS[0];
 const crmUrls = (envValue, path) =>
   uniqueList([

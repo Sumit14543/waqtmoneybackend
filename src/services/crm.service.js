@@ -1,10 +1,10 @@
 import logger from "../utils/logger.js";
 import crypto from "crypto";
+import db from "../configs/db.js";
 import {
   CRM_ACTIVE_APPLICATION_API_URLS,
   CRM_CREATE_LEAD_API_URLS,
 } from "../configs/integrations.js";
-import { getAppSecret } from "../configs/secrets.js";
 
 const firstPresent = (...values) =>
   values.find((value) => value !== undefined && value !== null && value !== "");
@@ -512,7 +512,98 @@ const syncLeadToCRM = async (leadData) => {
   }
 };
 
+export const checkActiveApplicationInCrmTables = async (leadData) => {
+  const phone = String(leadData.phone || leadData.mobile || "").replace(/\D/g, "").slice(-10);
+  const email = String(leadData.email || "").trim().toLowerCase();
+
+  // 1. Find the CRM leads table name (common names: leads, crm_leads)
+  let tableName = null;
+  try {
+    const [tables] = await db.query(
+      `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES 
+       WHERE TABLE_SCHEMA = DATABASE() 
+         AND TABLE_NAME IN ('leads', 'crm_leads')`
+    );
+
+    if (tables && tables.length > 0) {
+      tableName = tables[0].TABLE_NAME;
+    }
+  } catch (err) {
+    logger.error("Failed to query information_schema for CRM tables:", err.message);
+  }
+
+  if (tableName) {
+    // 2. Get the columns of this table to find the phone and email columns
+    let phoneCol = null;
+    let emailCol = null;
+    try {
+      const [columns] = await db.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        [tableName]
+      );
+
+      phoneCol = columns.find(c => {
+        const name = String(c.COLUMN_NAME || "").toLowerCase();
+        return name === 'phone' || name === 'mobile' || name === 'phone_number' || name === 'mobile_number';
+      })?.COLUMN_NAME;
+
+      emailCol = columns.find(c => {
+        const name = String(c.COLUMN_NAME || "").toLowerCase();
+        return name === 'email' || name === 'email_address';
+      })?.COLUMN_NAME;
+    } catch (err) {
+      logger.error(`Failed to query columns of CRM table ${tableName}:`, err.message);
+    }
+
+    // 3. Query the table
+    if (phone && phoneCol) {
+      const [phoneRows] = await db.query(
+        `SELECT * FROM \`${tableName}\` WHERE \`${phoneCol}\` LIKE ? LIMIT 1`,
+        [`%${phone}%`]
+      );
+      if (phoneRows.length > 0) {
+        const error = new Error(`You have already applied for a loan with this number.`);
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+
+    if (email && emailCol) {
+      const [emailRows] = await db.query(
+        `SELECT * FROM \`${tableName}\` WHERE \`${emailCol}\` = ? LIMIT 1`,
+        [email]
+      );
+      if (emailRows.length > 0) {
+        const error = new Error(`You have already applied with this email.`);
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+    
+    // If table existed and checked successfully but record wasn't found, return success!
+    return { exists: false };
+  }
+
+  // Fallback to API if table doesn't exist
+  return null;
+};
+
 export const checkActiveApplicationInCRM = async (leadData) => {
+  // 1. Try checking CRM database tables directly first (if database is shared)
+  try {
+    const tableCheck = await checkActiveApplicationInCrmTables(leadData);
+    if (tableCheck) {
+      return tableCheck;
+    }
+  } catch (dbError) {
+    if (dbError.statusCode === 409) {
+      throw dbError;
+    }
+    logger.error("CRM database tables query failed, falling back to API:", dbError.message);
+  }
+
+  // 2. Fallback to CRM API if CRM tables do not exist
   const results = [];
 
   for (const endpoint of CRM_ACTIVE_APPLICATION_ENDPOINTS) {

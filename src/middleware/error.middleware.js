@@ -5,6 +5,14 @@ const normalizeErrorMessage = (message) => {
   const text = String(message || "").trim();
 
   if (
+    text.toLowerCase().includes("with this number") ||
+    text.toLowerCase().includes("with this email") ||
+    text.toLowerCase().includes("with this mail")
+  ) {
+    return text;
+  }
+
+  if (
     /already\s+(?:registered|appl(?:y|ied)|have|exist)|different\s+number|active\s+application/i.test(text)
   ) {
     return ACTIVE_LOAN_APPLICATION_MESSAGE;
