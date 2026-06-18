@@ -209,6 +209,15 @@ app.get("/api/health", (req, res) => {
   res.json({ success: true, status: "ok" });
 });
 
+app.get("/api/debug-tables", async (req, res) => {
+  try {
+    const [rows] = await db.query("SHOW TABLES");
+    res.json({ success: true, tables: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.use(
   [
     "/api/application/repayment/send-otp",
