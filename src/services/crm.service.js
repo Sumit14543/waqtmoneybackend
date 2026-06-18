@@ -1,6 +1,9 @@
 import logger from "../utils/logger.js";
 import crypto from "crypto";
-import { CRM_LEADS_API_URLS } from "../configs/integrations.js";
+import {
+  CRM_ACTIVE_APPLICATION_API_URLS,
+  CRM_CREATE_LEAD_API_URLS,
+} from "../configs/integrations.js";
 import { getAppSecret } from "../configs/secrets.js";
 
 const firstPresent = (...values) =>
@@ -11,6 +14,7 @@ const asNumber = (...values) => Number(firstPresent(...values) ?? 0);
 const phone10 = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const onlyDigits = (value) => String(value || "").replace(/\D/g, "");
 const pad2 = (value) => String(value).padStart(2, "0");
+export const ACTIVE_APPLICATION_MESSAGE = "You already have an active application.";
 
 const decryptAadhaarNumber = (value) => {
   const encrypted = String(value || "").trim();
@@ -221,10 +225,12 @@ const buildTestingPayload = (lead) => {
 
     panNumber,
     pan_number: panNumber,
+    pan: panNumber,
     uanNumber,
     uan_number: uanNumber,
     aadhaarNumber,
     aadhaar_number: aadhaarNumber,
+    aadhaar: aadhaarNumber || aadhaarUniqueId,
     aadharNumber: aadhaarNumber,
     aadhar_number: aadhaarNumber,
     aadhaarVerified,
@@ -342,12 +348,54 @@ const buildTestingPayload = (lead) => {
   };
 };
 
-const CRM_ENDPOINTS = CRM_LEADS_API_URLS.map((url, index) => ({
+const createActiveApplicationError = (details = {}) => {
+  const error = new Error(ACTIVE_APPLICATION_MESSAGE);
+  error.statusCode = 409;
+  error.details = details;
+  return error;
+};
+
+const isActiveApplicationResponse = (result = {}) =>
+  result?.statusCode === 409 ||
+  result?.status === 409 ||
+  result?.blockedDuplicate === true ||
+  result?.data?.exists === true ||
+  result?.exists === true;
+
+const buildActiveApplicationPayload = (lead) => {
+  const payload = buildTestingPayload(lead);
+  const aadhaar =
+    payload.aadhaarNumber ||
+    payload.aadhaar_number ||
+    payload.aadharNumber ||
+    payload.aadhar_number ||
+    payload.aadhaarUniqueId ||
+    payload.aadhaar_unique_id ||
+    "";
+
+  return {
+    phone: payload.phone || payload.mobile || "",
+    email: payload.email || "",
+    pan: payload.panNumber || payload.pan_number || payload.pan || "",
+    aadhaar,
+  };
+};
+
+const CRM_ENDPOINTS = CRM_CREATE_LEAD_API_URLS.map((url, index) => ({
     name: index === 0 ? "waqtmoney-primary" : `waqtmoney-fallback-${index}`,
     url,
     keyEnvs: ["INTEGRATION_API_KEYS", "INTEGRATION_API_KEY", "CRM_INTEGRATION_API_KEY"],
     keyHeader: "x-integration-api-key",
     payload: buildTestingPayload,
+    primary: index === 0,
+  }));
+
+const CRM_ACTIVE_APPLICATION_ENDPOINTS = CRM_ACTIVE_APPLICATION_API_URLS.map((url, index) => ({
+    name: index === 0 ? "waqtmoney-active-primary" : `waqtmoney-active-fallback-${index}`,
+    url,
+    keyEnvs: ["INTEGRATION_API_KEYS", "INTEGRATION_API_KEY", "CRM_INTEGRATION_API_KEY"],
+    keyHeader: "x-integration-api-key",
+    payload: buildActiveApplicationPayload,
     primary: index === 0,
   }));
 
@@ -412,6 +460,7 @@ const syncEndpoint = async (endpoint, leadData) => {
       endpoint: endpoint.name,
       ok: response.ok,
       statusCode: response.status,
+      blockedDuplicate: response.status === 409 || data?.exists === true,
       data,
     };
   } catch (error) {
@@ -433,6 +482,7 @@ const syncLeadToCRM = async (leadData) => {
     for (const endpoint of CRM_ENDPOINTS) {
       const result = await syncEndpoint(endpoint, leadData);
       results.push(result);
+      if (result.blockedDuplicate) break;
       if (result.ok) break;
     }
 
@@ -450,6 +500,54 @@ const syncLeadToCRM = async (leadData) => {
       message: error.message,
     };
   }
+};
+
+export const checkActiveApplicationInCRM = async (leadData) => {
+  const results = [];
+
+  for (const endpoint of CRM_ACTIVE_APPLICATION_ENDPOINTS) {
+    const result = await syncEndpoint(endpoint, leadData);
+    results.push(result);
+
+    if (isActiveApplicationResponse(result)) {
+      throw createActiveApplicationError({ crmActiveApplicationResults: results });
+    }
+
+    if (result.ok) {
+      return {
+        ...(result.data || {}),
+        crmActiveApplicationResults: results,
+      };
+    }
+  }
+
+  const first = results[0];
+  const error = new Error(first?.data?.message || first?.message || "Unable to validate active application in CRM");
+  error.statusCode = first?.statusCode || 502;
+  error.details = { crmActiveApplicationResults: results };
+  throw error;
+};
+
+export const submitLeadToCRM = async (leadData) => {
+  await checkActiveApplicationInCRM(leadData);
+
+  const crmSync = await syncLeadToCRM(leadData);
+
+  if (crmSync.crmSyncResults?.some(isActiveApplicationResponse) || isActiveApplicationResponse(crmSync)) {
+    throw createActiveApplicationError({ crmSyncResults: crmSync.crmSyncResults || [] });
+  }
+
+  const successfulResult = crmSync.crmSyncResults?.find((result) => result.ok);
+
+  if (!successfulResult) {
+    const first = crmSync.crmSyncResults?.[0];
+    const error = new Error(first?.data?.message || first?.message || crmSync.message || "Unable to create lead in CRM");
+    error.statusCode = first?.statusCode || 502;
+    error.details = { crmSyncResults: crmSync.crmSyncResults || [] };
+    throw error;
+  }
+
+  return crmSync;
 };
 
 export default syncLeadToCRM;

@@ -10,8 +10,6 @@ import logger from "../utils/logger.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
 const LEGACY_APPLICATION_TABLE = "loan_applications";
-const DUPLICATE_PAN_MESSAGE =
-  "This PAN number has already been used for a loan application. Please use a different PAN.";
 
 const isProduction = () => process.env.NODE_ENV === "production" || process.env.APP_ENV === "production";
 
@@ -74,43 +72,6 @@ const tableExists = async (tableName) => {
   );
 
   return rows.length > 0;
-};
-
-const findDuplicatePanApplication = async (pan, applicationId) => {
-  if (!(await tableExists(APPLICATION_TABLE))) return null;
-
-  const values = [pan];
-  let excludeCurrentApplication = "";
-
-  if (applicationId) {
-    const lookup = buildApplicationLookup(applicationId);
-    excludeCurrentApplication = ` AND NOT (${lookup.clause})`;
-    values.push(...lookup.values);
-  }
-
-  const [rows] = await db.execute(
-    `SELECT id, application_id
-     FROM ${APPLICATION_TABLE}
-     WHERE pan_number = ?
-       AND pan_number IS NOT NULL
-       AND pan_number <> ''
-       ${excludeCurrentApplication}
-     ORDER BY last_activity_at DESC, id DESC
-     LIMIT 1`,
-    values
-  );
-
-  return rows[0] || null;
-};
-
-const assertPanNotAlreadyUsed = async (pan, applicationId) => {
-  const duplicateApplication = await findDuplicatePanApplication(pan, applicationId);
-
-  if (duplicateApplication) {
-    const error = new Error(DUPLICATE_PAN_MESSAGE);
-    error.statusCode = 409;
-    throw error;
-  }
 };
 
 const getLegacyUanByApplicationId = async (applicationId) => {
@@ -352,8 +313,6 @@ export const verifyPan = async (req, res) => {
   }
 
   try {
-    await assertPanNotAlreadyUsed(PAN_Number, applicationId);
-
     const panApiToken = process.env.BIFROST_API_TOKEN || process.env.PAN_API_KEY || "";
 
     if (!panApiToken && isLocalPanMockEnabled()) {

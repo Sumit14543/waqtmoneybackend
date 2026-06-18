@@ -26,7 +26,10 @@ const DEFAULT_CRM_API_BASE_URLS = [
   "https://payday-api.waqtmoney.com",
 ];
 const configuredCrmBaseUrls = listFromEnv(
-  process.env.CRM_API_BASE_URLS || process.env.CRM_API_BASE_URL,
+  process.env.CRM_BASE_URLS ||
+    process.env.CRM_BASE_URL ||
+    process.env.CRM_API_BASE_URLS ||
+    process.env.CRM_API_BASE_URL,
   [],
 );
 export const CRM_API_BASE_URLS = uniqueList([
@@ -43,6 +46,16 @@ const crmUrls = (envValue, path) =>
 export const CRM_LEADS_API_URLS = crmUrls(process.env.CRM_LEADS_API_URL, "/api/integrations/leads");
 export const CRM_LEADS_API_URL =
   CRM_LEADS_API_URLS[0];
+export const CRM_CREATE_LEAD_API_URLS = crmUrls(
+  process.env.CRM_CREATE_LEAD_API_URL,
+  "/api/create-lead",
+);
+export const CRM_CREATE_LEAD_API_URL = CRM_CREATE_LEAD_API_URLS[0];
+export const CRM_ACTIVE_APPLICATION_API_URLS = crmUrls(
+  process.env.CRM_ACTIVE_APPLICATION_API_URL,
+  "/api/check-active-application",
+);
+export const CRM_ACTIVE_APPLICATION_API_URL = CRM_ACTIVE_APPLICATION_API_URLS[0];
 export const CRM_STATUS_API_URLS = crmUrls(process.env.CRM_STATUS_API_URL, "/api/integrations/leads/status");
 export const CRM_STATUS_API_URL =
   CRM_STATUS_API_URLS[0];

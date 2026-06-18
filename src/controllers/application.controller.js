@@ -10,7 +10,7 @@ import {
   updateReferenceDetails,
   updateWorkDetails,
 } from "../services/application.service.js";
-import syncLeadToCRM from "../services/crm.service.js";
+import { checkActiveApplicationInCRM, submitLeadToCRM } from "../services/crm.service.js";
 import { lookupIfsc } from "../services/ifsc.service.js";
 import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 import {
@@ -47,29 +47,6 @@ const DEFAULT_PAYMENT_ORIGINS = PRODUCTION_WEB_ORIGINS;
 const isProductionRuntime = () =>
   process.env.NODE_ENV === "production" || process.env.APP_ENV === "production";
 
-const scheduleCrmSync = (id, reason) => {
-  if (!id) return;
-
-  setTimeout(async () => {
-    try {
-      const application = await getApplicationById(id);
-      if (!application) {
-        logger.warn("CRM sync skipped: application not found", { id, reason });
-        return;
-      }
-
-      const crmSync = await syncLeadToCRM(application);
-      logger.info("CRM sync completed:", {
-        applicationId: application.application_id || id,
-        reason,
-        results: crmSync.crmSyncResults,
-      });
-    } catch (syncErr) {
-      logger.error("Background CRM sync error:", syncErr.message);
-    }
-  }, 1500);
-};
-
 export const saveHeroLead = async (req, res, next) => {
   try {
     const result = await createHeroLead(req.body);
@@ -100,6 +77,15 @@ export const saveContactQuery = async (req, res, next) => {
 
 export const applyLoan = async (req, res, next) => {
   try {
+    await checkActiveApplicationInCRM({
+      ...req.body,
+      phone: req.body.phone || req.body.mobile,
+      sourceSystem: req.body.sourceSystem || req.body.source || "waqtmoney",
+      source: req.body.source || "waqtmoney",
+      loanType: "payday",
+      loan_type: "payday",
+    });
+
     const result = await createApplication(req.body);
 
     logger.debug("Application submitted:", {
@@ -229,16 +215,39 @@ export const recoverApplicationSession = async (req, res, next) => {
 export const updateApp = async (req, res, next) => {
   try {
     const { id, ...data } = req.body;
+
+    if (id && data.current_step === "video_kyc_completed") {
+      const application = await getApplicationById(id);
+      if (!application) {
+        const error = new Error("Application not found");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const crmSync = await submitLeadToCRM({
+        ...application,
+        ...data,
+        application_id: application.application_id || id,
+        sourceApplicationId: application.application_id || id,
+        sourceLeadId: application.application_id || id,
+        sourceSystem: application.source || "waqtmoney",
+        source: application.source || "waqtmoney",
+        loanType: "payday",
+        loan_type: "payday",
+      });
+
+      logger.info("CRM lead submitted before final application completion:", {
+        applicationId: application.application_id || id,
+        results: crmSync.crmSyncResults,
+      });
+    }
+
     await updateApplication(id, data);
 
     if (id && process.env.UAN_LOOKUP_BACKGROUND_ON_UPDATE === "true") {
       setTimeout(() => getApplicationUanById(id).catch((error) => {
         logger.error("Background UAN sync error:", error.message);
       }), 0);
-    }
-
-    if (id && data.current_step === "video_kyc_completed") {
-      scheduleCrmSync(id, "final_submit");
     }
 
     res.status(200).json({
