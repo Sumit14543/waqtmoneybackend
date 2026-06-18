@@ -10,6 +10,7 @@ import {
 } from "../configs/integrations.js";
 import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 import { fetchCrmRepaymentDetails } from "../services/repayment.service.js";
+import { ACTIVE_APPLICATION_MESSAGE, checkActiveApplicationInCRM } from "../services/crm.service.js";
 import { parseCookies } from "../utils/cookies.js";
 
 const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
@@ -20,6 +21,10 @@ const getSafeErrorMessage = (err, fallback = "Something went wrong. Please try a
   isProduction() && (err.statusCode || err.status || 500) >= 500
     ? fallback
     : err.message || fallback;
+
+const isActiveApplicationError = (err) =>
+  Number(err?.statusCode || err?.status) === 409 ||
+  err?.message === ACTIVE_APPLICATION_MESSAGE;
 
 const ensureDashboardApplicationColumns = async () => {
   const columns = [
@@ -704,9 +709,36 @@ export const signup = async (req, res) => {
       });
     }
 
+    try {
+      await checkActiveApplicationInCRM({
+        name,
+        fullName: name,
+        full_name: name,
+        email,
+        mobile,
+        phone: mobile,
+        sourceSystem: "waqtmoney",
+        source: "waqtmoney",
+        loanType: "payday",
+        loan_type: "payday",
+      });
+    } catch (err) {
+      if (isActiveApplicationError(err)) {
+        return res.status(409).json({
+          success: false,
+          message: ACTIVE_APPLICATION_MESSAGE,
+        });
+      }
+
+      throw err;
+    }
+
     const [existingUsers] = await db.query("SELECT * FROM users WHERE mobile=?", [mobile]);
     if (existingUsers.length > 0) {
-      return res.status(400).json({ message: "Mobile number already registered" });
+      return res.status(409).json({
+        success: false,
+        message: "This mobile number already has an account. Please login to continue.",
+      });
     }
 
     const hashed = await bcrypt.hash(password, 10);
@@ -732,7 +764,10 @@ export const signup = async (req, res) => {
       user,
     });
   } catch (err) {
-    res.status(500).json({ error: getSafeErrorMessage(err) });
+    res.status(err.statusCode || 500).json({
+      success: false,
+      message: getSafeErrorMessage(err),
+    });
   }
 };
 

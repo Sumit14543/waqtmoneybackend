@@ -14,7 +14,7 @@ const asNumber = (...values) => Number(firstPresent(...values) ?? 0);
 const phone10 = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const onlyDigits = (value) => String(value || "").replace(/\D/g, "");
 const pad2 = (value) => String(value).padStart(2, "0");
-export const ACTIVE_APPLICATION_MESSAGE = "You already have an active application.";
+export const ACTIVE_APPLICATION_MESSAGE = "You have already applied for a loan.";
 
 const decryptAadhaarNumber = (value) => {
   const encrypted = String(value || "").trim();
