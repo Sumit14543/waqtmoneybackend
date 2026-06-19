@@ -831,9 +831,7 @@ const getCashfreeReturnUrl = (orderId, applicationId, req, loanId = "") => {
     }
   }
 
-  const clientBaseUrl = isCashfreeProduction
-    ? cashfreeClientBaseUrl
-    : getTrustedRequestOrigin(req) || cashfreeClientBaseUrl;
+  const clientBaseUrl = getTrustedRequestOrigin(req) || cashfreeClientBaseUrl;
 
   if (isCashfreeProduction && !isHttpsUrl(clientBaseUrl)) {
     if (process.env.NODE_ENV === "production") {
