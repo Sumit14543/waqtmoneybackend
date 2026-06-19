@@ -7,7 +7,14 @@ const DIGITAP_BASE_URL = String(process.env.DIGITAP_BASE_URL || "https://apidemo
 const AADHAAR_CALLBACK_URL = process.env.DIGITAP_AADHAAR_CALLBACK_URL ||
   "https://waqt-testing-api.waqtmoney.com/api/react-aadhaar/callback";
 const AADHAAR_CLIENT_BASE_URL = "https://waqt-testing.waqtmoney.com";
-const getCallbackClientBaseUrl = () => AADHAAR_CLIENT_BASE_URL;
+const getCallbackClientBaseUrl = (req) => {
+  try {
+    const origin = req && (req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null));
+    return (process.env.CLIENT_BASE_URL || origin || AADHAAR_CLIENT_BASE_URL).replace(/\/$/, "");
+  } catch {
+    return AADHAAR_CLIENT_BASE_URL;
+  }
+};
 const SUCCESS_REDIRECT_PATH = "/user/work-details";
 const DIGITAP_GENERATE_URL_PATH = "/ent/v1/kyc/generate-url";
 const DIGITAP_DETAILS_PATH = "/ent/v1/kyc/get-digilocker-details";

@@ -2,7 +2,7 @@ import mysql from "mysql2/promise";
 import "./env.js";
 import logger from "../utils/logger.js";
 
-const rawDbPassword = process.env.DB_PASSWORD ?? process.env.DB_PASS ?? "";
+const rawDbPassword = process.env.DB_PASSWORD || process.env.DB_PASS || "";
 const dbPassword =
   rawDbPassword === "" || rawDbPassword.toLowerCase() === "null"
     ? undefined
