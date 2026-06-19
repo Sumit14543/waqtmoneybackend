@@ -42,7 +42,7 @@ jobs:
           --exclude=app.log \
           --exclude=.well-known \
           -e "ssh -p 5726 -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
-          ./ \
+          Server/ \
           waqtmoney@103.234.185.16:/home/waqtmoney/public_html/waqt-testing-api/
 
       - name: Restore Remote Env From Secret
@@ -89,6 +89,8 @@ jobs:
             cd /home/waqtmoney/public_html/waqt-testing-api/
             mkdir -p tmp
             touch tmp/restart.txt
+            mkdir -p Server/tmp
+            touch Server/tmp/restart.txt
           "
 
       - name: Stop Running Backend
