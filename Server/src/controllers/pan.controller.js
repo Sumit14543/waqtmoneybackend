@@ -5,6 +5,7 @@ import {
   PINCODES_INFO_API_URL,
 } from "../configs/integrations.js";
 import { getApplicationUanById, saveApplicationUanById } from "../services/application.service.js";
+import { checkActiveApplicationInCRM } from "../services/crm.service.js";
 import { extractUanNumber, fetchUanByMobile } from "../services/uan.service.js";
 import logger from "../utils/logger.js";
 
@@ -313,6 +314,14 @@ export const verifyPan = async (req, res) => {
   }
 
   try {
+    await checkActiveApplicationInCRM({
+      pan: PAN_Number,
+      sourceSystem: "waqtmoney",
+      source: "waqtmoney",
+      loanType: "payday",
+      loan_type: "payday",
+    });
+
     const panApiToken = process.env.BIFROST_API_TOKEN || process.env.PAN_API_KEY || "";
 
     if (!panApiToken && isLocalPanMockEnabled()) {
@@ -398,7 +407,7 @@ export const verifyPan = async (req, res) => {
       }
 
       return res.status(apiRes.ok ? 502 : apiRes.status).json({
-        message: data?.message || "PAN API failed",
+        message: "PAN verification could not be completed. Please check the PAN and try again.",
       });
     }
 

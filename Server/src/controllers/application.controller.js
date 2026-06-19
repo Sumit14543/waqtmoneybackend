@@ -729,7 +729,8 @@ const getCashfreeClientBaseUrl = () =>
   (
     process.env.CASHFREE_CLIENT_BASE_URL ||
     process.env.CASHFREE_PUBLIC_BASE_URL ||
-    (isCashfreeProduction ? DEFAULT_PAYMENT_ORIGINS[0] : getPublicClientBaseUrl())
+    getPublicClientBaseUrl() ||
+    DEFAULT_PAYMENT_ORIGINS[0]
   ).replace(/\/$/, "");
 
 const isHttpsUrl = (value) => /^https:\/\/[^/]+/i.test(String(value || ""));
@@ -738,7 +739,22 @@ const isCashfreeWhitelistedUrl = (value) => {
   const normalizedValue = String(value || "").trim().replace(/\/$/, "");
   if (!isHttpsUrl(normalizedValue)) return false;
 
-  return DEFAULT_PAYMENT_ORIGINS.includes(normalizedValue);
+  const clientBaseUrl = getPublicClientBaseUrl();
+  const cashfreeAllowedOrigins = String(process.env.CASHFREE_ALLOWED_ORIGIN || "")
+    .split(",")
+    .map((item) => item.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+  const allowedOrigins = new Set(
+    [
+      ...DEFAULT_PAYMENT_ORIGINS,
+      clientBaseUrl,
+      ...cashfreeAllowedOrigins,
+    ]
+      .map((item) => String(item || "").trim().replace(/\/$/, ""))
+      .filter(Boolean),
+  );
+
+  return allowedOrigins.has(normalizedValue);
 };
 
 const getOptionalHttpsUrl = (value) => {

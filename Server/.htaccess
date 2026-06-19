@@ -1,0 +1,21 @@
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Keep certificate validation files served directly by Apache.
+  RewriteRule ^\.well-known/ - [L]
+
+  # Forward the public API, including provider callbacks, to the Node process.
+  RewriteRule ^(.*)$ http://127.0.0.1:5000/$1 [P,L,NE]
+</IfModule>
+
+<IfModule mod_authz_core.c>
+  <FilesMatch "(^\.|\.env|package(-lock)?\.json|.*\.log|.*\.pid)$">
+    Require all denied
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+</IfModule>

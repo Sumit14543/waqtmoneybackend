@@ -578,7 +578,12 @@ export const checkActiveApplicationInCrmTables = async (leadData) => {
 };
 
 export const checkActiveApplicationInCRM = async (leadData) => {
-  if (process.env.BYPASS_DUPLICATE_CHECK === "true") {
+  const duplicateCheckBypassEnabled =
+    process.env.BYPASS_DUPLICATE_CHECK === "true" &&
+    process.env.NODE_ENV !== "production" &&
+    process.env.APP_ENV !== "production";
+
+  if (duplicateCheckBypassEnabled) {
     logger.info("Bypassing active application check because BYPASS_DUPLICATE_CHECK is true");
     return { exists: false };
   }
@@ -595,17 +600,24 @@ export const checkActiveApplicationInCRM = async (leadData) => {
       throw createActiveApplicationError({ crmActiveApplicationResults: results });
     }
 
-    if (result.ok) {
+    if (result.ok && result.data?.exists === false) {
       return {
         ...(result.data || {}),
         crmActiveApplicationResults: results,
       };
     }
+
+    if (result.ok) {
+      logger.error("CRM active-application response did not contain an exists boolean:", {
+        endpoint: result.endpoint,
+        responseKeys: Object.keys(result.data || {}),
+      });
+    }
   }
 
   const first = results[0];
-  const error = new Error(first?.data?.message || first?.message || "Unable to validate active application in CRM");
-  error.statusCode = first?.statusCode || 502;
+  const error = new Error("Unable to validate active application in CRM");
+  error.statusCode = 502;
   error.details = { crmActiveApplicationResults: results };
   throw error;
 };

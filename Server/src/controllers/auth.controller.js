@@ -278,6 +278,12 @@ const formatLoanStatus = (application) => {
 };
 
 const toFiniteNumber = (value) => {
+  if (value === undefined || value === null) return 0;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[%,\s]/g, "");
+    const number = Number(cleaned);
+    return Number.isFinite(number) ? number : 0;
+  }
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
 };
@@ -690,10 +696,14 @@ const toDashboardLoan = (loan, crmStatus = null) => {
         loan.repayment_paid_amount
   );
   const dueDate =
+    repayment.loanDueDate ||
+    repayment.loan_due_date ||
     repayment.repaymentDueDate ||
     repayment.repayment_due_date ||
     repayment.dueDate ||
     repayment.due_date ||
+    crmStatus?.disbursement?.dueDate ||
+    crmStatus?.sanction?.dueDate ||
     "";
 
   const applicationId =

@@ -57,6 +57,12 @@ const maskLookupIdentifier = (value) => {
 };
 
 const toFiniteNumber = (value) => {
+  if (value === undefined || value === null) return 0;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[%,\s]/g, "");
+    const number = Number(cleaned);
+    return Number.isFinite(number) ? number : 0;
+  }
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
 };
@@ -73,6 +79,10 @@ const firstNumber = (...values) => {
 const firstText = (...values) =>
   values.map((value) => String(value || "").trim()).find(Boolean) || "";
 
+const getCrmRepaymentBlock = (crmStatus = {}) => ({
+  ...(crmStatus.repayment || {}),
+  ...crmStatus,
+});
 const normalizeRepaymentBlock = (repayment = {}) => {
   const totalAmount = firstNumber(
     repayment.totalAmount,
@@ -112,7 +122,14 @@ const normalizeRepaymentBlock = (repayment = {}) => {
     totalAmount,
     paidAmount,
     balanceAmount,
-    dueDate: firstText(repayment.dueDate, repayment.due_date, repayment.repaymentDueDate, repayment.repayment_due_date),
+    dueDate: firstText(
+      repayment.loanDueDate,
+      repayment.loan_due_date,
+      repayment.dueDate,
+      repayment.due_date,
+      repayment.repaymentDueDate,
+      repayment.repayment_due_date
+    ),
     lastPaymentAt: firstText(
       repayment.lastPaymentAt,
       repayment.last_payment_at,
@@ -186,7 +203,7 @@ export const fetchCrmLeadStatusByPan = (pan) =>
 const getRepaymentStatus = (repayment = {}) => String(repayment.status || "").toLowerCase();
 
 const hasRepaymentData = (crmStatus = {}) => {
-  const repayment = normalizeRepaymentBlock(crmStatus?.repayment || {});
+  const repayment = normalizeRepaymentBlock(getCrmRepaymentBlock(crmStatus));
   return Boolean(
     repayment.status ||
       repayment.totalAmount ||
@@ -208,7 +225,9 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
     return null;
   }
 
-  const repayment = normalizeRepaymentBlock(crmStatus.repayment || {});
+  // CRM repayment update events expose these fields at the top level, while
+  // older status responses use a nested repayment block.
+  const repayment = normalizeRepaymentBlock(getCrmRepaymentBlock(crmStatus));
   const applicationId = crmStatus.sourceLeadId || crmStatus.sourceApplicationId || crmStatus.applicationId || identifier;
   const loanId = repayment.loanId || crmStatus.loanId || crmStatus.sanction?.loanId || crmStatus.sanction?.agreementNumber || applicationId;
   const totalAmount = repayment.totalAmount;
@@ -256,10 +275,11 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
     requested_loan_amount: requestedLoanAmount || undefined,
     loan_amount: approvedLoanAmount || undefined,
     principal_amount: approvedLoanAmount || undefined,
+    disbursed_amount: firstNumber(crmStatus.disbursement?.disbursedAmount, crmStatus.sanction?.disbursedAmount) || undefined,
     maturity_amount: totalAmount || undefined,
     total_repayable_amount: totalAmount || undefined,
-    outstanding_amount: balanceAmount || undefined,
-    next_payment_amount: balanceAmount || undefined,
+    outstanding_amount: balanceAmount,
+    next_payment_amount: balanceAmount,
     repayment_paid_amount: paidAmount,
     paid_amount: paidAmount,
     due_date: repayment.dueDate || "",
@@ -325,13 +345,22 @@ export const fetchCrmRepayments = async ({ sourceLeadId, loanId, mobile } = {}) 
 export const syncRepaymentToCRM = async (repayment) => {
   const payload = {
     sourceSystem: SOURCE_SYSTEM,
+    source_system: SOURCE_SYSTEM,
     sourceLeadId: repayment.sourceLeadId,
+    source_lead_id: repayment.sourceLeadId,
+    leadId: repayment.sourceLeadId,
+    lead_id: repayment.sourceLeadId,
     loanId: repayment.loanId,
+    loan_id: repayment.loanId,
     amount: Number(repayment.amount || 0),
     method: repayment.method || "ONLINE",
+    payment_method: repayment.method || "ONLINE",
     reference: repayment.reference,
+    payment_reference: repayment.reference,
     gateway: repayment.gateway || "cashfree",
+    payment_gateway: repayment.gateway || "cashfree",
     paidAt: repayment.paidAt || new Date().toISOString(),
+    paid_at: repayment.paidAt || new Date().toISOString(),
     status: repayment.status || "success",
   };
 

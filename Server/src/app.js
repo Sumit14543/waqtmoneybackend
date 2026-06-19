@@ -206,7 +206,7 @@ app.get("/", (req, res) => {
 });
 
 app.get("/api/health", (req, res) => {
-  res.json({ success: true, status: "ok" });
+  res.json({ success: true, status: "ok", version: "v2" });
 });
 
 app.use(
@@ -242,6 +242,16 @@ app.use("/api/auth", authRoutes);
 app.use("/api/pan", panRoutes);
 app.use("/api/aadhaar", aadhaarRoutes);
 app.use("/api/react-aadhaar", reactAadhaarRoutes);
+
+app.get("/api/test-repayment/:id", async (req, res) => {
+  try {
+    const { fetchCrmRepaymentDetails } = await import("./services/repayment.service.js");
+    const data = await fetchCrmRepaymentDetails(req.params.id);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.use(errorHandler);
 

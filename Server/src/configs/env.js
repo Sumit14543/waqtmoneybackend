@@ -32,6 +32,10 @@ if (process.env.NODE_ENV === "production") {
     "CASHFREE_CLIENT_SECRET",
   ];
   const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]?.trim());
+  const dbPassword = String(process.env.DB_PASSWORD || process.env.DB_PASS || "").trim();
+  if (!dbPassword || ["null", "undefined"].includes(dbPassword.toLowerCase())) {
+    missingEnvVars.push("DB_PASSWORD or DB_PASS");
+  }
 
   if (missingEnvVars.length > 0) {
     throw new Error(`Missing required production env vars: ${missingEnvVars.join(", ")}`);
