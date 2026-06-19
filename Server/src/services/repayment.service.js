@@ -56,6 +56,28 @@ const maskLookupIdentifier = (value) => {
   return text ? "redacted" : "";
 };
 
+const normalizeCrmDate = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return "";
+
+  if (/^\d+$/.test(text)) {
+    const num = Number(text);
+    if (num > 1000000000 && num < 9999999999) {
+      return new Date(num * 1000).toISOString();
+    }
+    return new Date(num).toISOString();
+  }
+
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+
+  if (date.getFullYear() < 2020) {
+    date.setFullYear(new Date().getFullYear());
+  }
+
+  return date.toISOString();
+};
+
 const toFiniteNumber = (value) => {
   if (value === undefined || value === null) return 0;
   if (typeof value === "string") {
@@ -122,13 +144,15 @@ const normalizeRepaymentBlock = (repayment = {}) => {
     totalAmount,
     paidAmount,
     balanceAmount,
-    dueDate: firstText(
-      repayment.loanDueDate,
-      repayment.loan_due_date,
-      repayment.dueDate,
-      repayment.due_date,
-      repayment.repaymentDueDate,
-      repayment.repayment_due_date
+    dueDate: normalizeCrmDate(
+      firstText(
+        repayment.loanDueDate,
+        repayment.loan_due_date,
+        repayment.dueDate,
+        repayment.due_date,
+        repayment.repaymentDueDate,
+        repayment.repayment_due_date
+      )
     ),
     lastPaymentAt: firstText(
       repayment.lastPaymentAt,

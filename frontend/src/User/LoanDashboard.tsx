@@ -194,8 +194,14 @@ const getTimelineText = (item?: CrmTimelineItem) =>
     .join(" ")
     .toLowerCase();
 
-const findTimelineIndex = (items: CrmTimelineItem[], patterns: RegExp[]) =>
-  items.findIndex((item) => patterns.some((pattern) => pattern.test(getTimelineText(item))));
+const findTimelineIndex = (items: CrmTimelineItem[], patterns: RegExp[]) => {
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (patterns.some((pattern) => pattern.test(getTimelineText(items[i])))) {
+      return i;
+    }
+  }
+  return -1;
+};
 
 const getCurrentTimelineIndex = (items: CrmTimelineItem[], status?: CrmLeadStatus) => {
   const dashboardStageKey = String(status?.dashboardCurrentStageKey || "").toLowerCase();

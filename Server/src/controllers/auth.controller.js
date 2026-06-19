@@ -288,6 +288,28 @@ const toFiniteNumber = (value) => {
   return Number.isFinite(number) ? number : 0;
 };
 
+const normalizeCrmDate = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return "";
+
+  if (/^\d+$/.test(text)) {
+    const num = Number(text);
+    if (num > 1000000000 && num < 9999999999) {
+      return new Date(num * 1000).toISOString();
+    }
+    return new Date(num).toISOString();
+  }
+
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+
+  if (date.getFullYear() < 2020) {
+    date.setFullYear(new Date().getFullYear());
+  }
+
+  return date.toISOString();
+};
+
 const firstPositiveNumber = (...values) => {
   for (const value of values) {
     const number = toFiniteNumber(value);
@@ -643,7 +665,7 @@ const toDashboardLoan = (loan, crmStatus = null) => {
   const dashboardCrmStatus = withDashboardCrmStage(crmStatus);
   const crmLoanAmount = Number(crmStatus?.loanAmount || 0);
   const crmRepaymentLoanAmount = Number(crmStatus?.repayment?.loanAmount || crmStatus?.repayment?.loan_amount || 0);
-  const amount = firstPositiveNumber(crmRepaymentLoanAmount, crmLoanAmount);
+  const amount = firstPositiveNumber(crmRepaymentLoanAmount, crmLoanAmount, loan.loan_amount, loan.principal_amount);
   const sanction = crmStatus?.sanction || {};
   const repayment = crmStatus?.repayment || {};
   const approvedLoanAmount = firstPositiveNumber(
@@ -656,7 +678,8 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     crmStatus?.approvedLoanAmount,
     crmStatus?.approvedAmount,
     crmStatus?.sanctionedAmount,
-    loan.loan_amount
+    loan.loan_amount,
+    loan.principal_amount
   );
   const totalRepayableAmount = firstPositiveNumber(
     repayment.totalAmount,
@@ -672,7 +695,9 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     sanction.repaymentAmount,
     sanction.maturityAmount,
     crmStatus?.maturityAmount,
-    crmStatus?.totalRepayableAmount
+    crmStatus?.totalRepayableAmount,
+    loan.total_repayable_amount,
+    loan.maturity_amount
   );
   const crmOutstandingAmount = firstPositiveNumber(
     repayment.balanceAmount,
@@ -682,7 +707,9 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     repayment.outstanding_amount,
     repayment.nextPaymentAmount,
     repayment.next_payment_amount,
-    getCrmRepaymentOutstanding(crmStatus || {})
+    getCrmRepaymentOutstanding(crmStatus || {}),
+    loan.outstanding_amount,
+    loan.next_payment_amount
   );
   const repaymentAmount = Math.round(crmOutstandingAmount);
   const paidAmount = toFiniteNumber(
@@ -693,9 +720,10 @@ const toDashboardLoan = (loan, crmStatus = null) => {
         repayment.paid_amount ??
         repayment.repaymentPaidAmount ??
         repayment.repayment_paid_amount ??
-        loan.repayment_paid_amount
+        loan.repayment_paid_amount ??
+        loan.paid_amount
   );
-  const dueDate =
+  const dueDate = normalizeCrmDate(
     repayment.loanDueDate ||
     repayment.loan_due_date ||
     repayment.repaymentDueDate ||
@@ -704,12 +732,16 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     repayment.due_date ||
     crmStatus?.disbursement?.dueDate ||
     crmStatus?.sanction?.dueDate ||
-    "";
+    loan.repayment_due_date ||
+    loan.due_date ||
+    ""
+  );
 
   const applicationId =
     crmStatus?.sourceLeadId ||
     crmStatus?.sourceApplicationId ||
     crmStatus?.applicationId ||
+    loan.application_id ||
     "";
   const loanId =
     repayment.loanId ||
@@ -719,6 +751,7 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     sanction.loanId ||
     sanction.loan_id ||
     sanction.agreementNumber ||
+    loan.loan_id ||
     "";
 
   const tenureDays = firstPositiveNumber(
@@ -730,7 +763,9 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     sanction.tenure,
     crmStatus?.tenureDays,
     crmStatus?.tenure_days,
-    crmStatus?.tenure
+    crmStatus?.tenure,
+    loan.tenure_days,
+    loan.tenure
   );
 
   const interestRate = firstPositiveNumber(
@@ -739,7 +774,8 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     sanction.interestRate,
     sanction.interest_rate,
     crmStatus?.interestRate,
-    crmStatus?.interest_rate
+    crmStatus?.interest_rate,
+    loan.interest_rate
   );
 
   const displayInterestRate = interestRate ? (String(interestRate).includes("%") ? String(interestRate) : `${interestRate}%`) : "";
@@ -750,7 +786,8 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     sanction.interestAccrued,
     sanction.interest_accrued,
     crmStatus?.interestAccrued,
-    crmStatus?.interest_accrued
+    crmStatus?.interest_accrued,
+    loan.interest_accrued
   );
 
   return {
@@ -759,10 +796,10 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     mobile: normalizeMobile(crmStatus?.phone || loan.mobile),
     crmApplicationId: crmStatus?.applicationId || "",
     crmLeadId: crmStatus?.crmLeadId || "",
-    status: crmStatus?.publicStatus || crmStatus?.crmStatus || repayment.status || repayment.repaymentStatus || "",
-    currentStep: crmStatus?.statusTitle || crmStatus?.currentStage || "",
+    status: crmStatus?.publicStatus || crmStatus?.crmStatus || repayment.status || repayment.repaymentStatus || loan.status || loan.repayment_status || "",
+    currentStep: crmStatus?.statusTitle || crmStatus?.currentStage || loan.current_step || "",
     amount: Number.isFinite(amount) ? amount : 0,
-    requestedLoanAmount: firstPositiveNumber(crmLoanAmount, crmRepaymentLoanAmount),
+    requestedLoanAmount: firstPositiveNumber(crmLoanAmount, crmRepaymentLoanAmount, loan.requested_loan_amount, loan.loan_amount),
     approvedLoanAmount,
     totalRepayableAmount,
     outstandingAmount: repaymentAmount,
@@ -999,7 +1036,15 @@ export const dashboard = async (req, res) => {
     let formattedLoans = crmLoansByMobile.length
       ? await Promise.all(
         crmLoansByMobile.map(async (crmStatus) => {
-          return toDashboardLoan({}, crmStatus);
+          const matchingLoan = loans.find(l =>
+            l.application_id === crmStatus.applicationId ||
+            l.application_id === crmStatus.sourceLeadId ||
+            l.application_id === crmStatus.sourceApplicationId ||
+            (crmStatus.repayment?.loanId && l.loan_id === crmStatus.repayment.loanId) ||
+            (crmStatus.disbursement?.loanId && l.loan_id === crmStatus.disbursement.loanId) ||
+            l.loan_id === crmStatus.loanId
+          ) || {};
+          return toDashboardLoan(matchingLoan, crmStatus);
         })
       )
       : (
