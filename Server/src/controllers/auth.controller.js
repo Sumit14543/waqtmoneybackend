@@ -303,10 +303,6 @@ const normalizeCrmDate = (value) => {
   const date = new Date(text);
   if (Number.isNaN(date.getTime())) return text;
 
-  if (date.getFullYear() < 2020) {
-    date.setFullYear(new Date().getFullYear());
-  }
-
   return date.toISOString();
 };
 
@@ -493,7 +489,7 @@ const getDashboardCrmPresentation = (crmStatus = {}) => {
       statusTitle: "Repayment received",
       statusDescription: "Your repayment has been received and your balance has been updated.",
       nextExpectedAction: crmStatus.nextExpectedAction || "",
-      progressPercent: crmStatus.progressPercent,
+      progressPercent: 100,
     };
   }
 
@@ -502,7 +498,7 @@ const getDashboardCrmPresentation = (crmStatus = {}) => {
       statusTitle: "Loan disbursed",
       statusDescription: "Your loan has been disbursed and the repayment schedule is now active.",
       nextExpectedAction: crmStatus.nextExpectedAction || "",
-      progressPercent: crmStatus.progressPercent,
+      progressPercent: 100,
     };
   }
 
@@ -668,6 +664,7 @@ const toDashboardLoan = (loan, crmStatus = null) => {
   const amount = firstPositiveNumber(crmRepaymentLoanAmount, crmLoanAmount, loan.loan_amount, loan.principal_amount);
   const sanction = crmStatus?.sanction || {};
   const repayment = crmStatus?.repayment || {};
+  const disbursement = crmStatus?.disbursement || {};
   const approvedLoanAmount = firstPositiveNumber(
     repayment.loanAmount,
     repayment.loan_amount,
@@ -705,6 +702,8 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     repayment.outstanding,
     repayment.outstandingAmount,
     repayment.outstanding_amount,
+    disbursement.outstanding,
+    disbursement.outstandingAmount,
     repayment.nextPaymentAmount,
     repayment.next_payment_amount,
     getCrmRepaymentOutstanding(crmStatus || {}),
@@ -810,6 +809,9 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     interestRate: displayInterestRate,
     interestAccrued,
     disbursalDate: getCrmDisbursalDate(crmStatus) || loan.disbursal_date || "",
+    agreementNumber: disbursement.agreementNumber || sanction.agreementNumber || "",
+    disbursedAmount: firstPositiveNumber(disbursement.disbursedAmount, sanction.disbursedAmount, crmStatus?.disbursedAmount),
+    disbursementStatus: disbursement.status || "",
     crmRepaymentDetails: null,
     crmStatus: dashboardCrmStatus,
   };
@@ -1057,6 +1059,11 @@ export const dashboard = async (req, res) => {
           })
         )
       ).filter(Boolean);
+    formattedLoans.sort((left, right) => {
+      const rightUpdatedAt = new Date(right.crmStatus?.lastUpdatedAt || 0).getTime() || 0;
+      const leftUpdatedAt = new Date(left.crmStatus?.lastUpdatedAt || 0).getTime() || 0;
+      return rightUpdatedAt - leftUpdatedAt;
+    });
     const latestLoan = formattedLoans[0] || null;
     const latestCrmStatus = latestLoan?.crmStatus || null;
 
