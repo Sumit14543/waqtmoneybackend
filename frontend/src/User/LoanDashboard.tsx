@@ -33,6 +33,9 @@ type DashboardLoan = {
   interestRate?: number | string;
   interestAccrued?: number | string;
   disbursalDate?: string;
+  agreementNumber?: string;
+  disbursedAmount?: number;
+  disbursementStatus?: string;
   crmRepaymentDetails?: Record<string, unknown>;
   crmStatus?: CrmLeadStatus;
 };
@@ -92,6 +95,12 @@ type CrmLeadStatus = {
   };
   disbursement?: {
     status?: string;
+    agreementNumber?: string;
+    disbursedAmount?: number;
+    disbursedAt?: string;
+    dueDate?: string;
+    loanId?: string;
+    outstanding?: number;
   } | null;
   repayment?: {
     status?: string;
@@ -234,6 +243,26 @@ const getCurrentTimelineIndex = (items: CrmTimelineItem[], status?: CrmLeadStatu
   return Math.max(0, items.length - 1);
 };
 
+const isCompletedLoanStage = (status?: CrmLeadStatus | null) =>
+  ["loan_disbursed", "repayment_received"].includes(
+    String(status?.dashboardCurrentStageKey || "").toLowerCase()
+  );
+
+const getApplicationProgress = (
+  status: CrmLeadStatus | null | undefined,
+  items: CrmTimelineItem[],
+  currentIndex: number
+) => {
+  if (isCompletedLoanStage(status)) return 100;
+
+  const crmProgress = Number(status?.dashboardProgressPercent ?? status?.progressPercent);
+  if (Number.isFinite(crmProgress)) return Math.min(100, Math.max(0, crmProgress));
+
+  return items.length && currentIndex >= 0
+    ? Math.min(100, Math.max(0, ((currentIndex + 1) / items.length) * 100))
+    : 0;
+};
+
 const ProcessTimeline = ({
   items,
   status,
@@ -245,18 +274,7 @@ const ProcessTimeline = ({
 
   const currentIndex = getCurrentTimelineIndex(items, status);
   const visibleItems = items.slice(0, currentIndex + 1);
-  const useTimelineProgress = Boolean(status?.dashboardCurrentStageKey);
-  const progressPercent = Math.min(
-    100,
-    Math.max(
-      0,
-      Number(
-        useTimelineProgress
-          ? ((currentIndex + 1) / items.length) * 100
-          : status?.dashboardProgressPercent ?? status?.progressPercent ?? ((currentIndex + 1) / items.length) * 100
-      )
-    )
-  );
+  const progressPercent = getApplicationProgress(status, items, currentIndex);
   const showNextStep =
     !["loan_disbursed", "repayment_received"].includes(String(status?.dashboardCurrentStageKey || "")) &&
     Boolean(status?.dashboardNextExpectedAction || status?.nextExpectedAction);
@@ -288,7 +306,7 @@ const ProcessTimeline = ({
                   <p className="mt-1 text-3xl font-extrabold text-[#8048e2]">{Math.round(progressPercent)}%</p>
                 </div>
                 <p className="text-right text-xs font-bold leading-5 text-[#52657d]">
-                  {visibleItems.length} steps completed
+                  {isCompletedLoanStage(status) ? items.length : visibleItems.length} steps completed
                 </p>
               </div>
               <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#ebe3ff]">
@@ -523,18 +541,7 @@ const LoanDashboard = () => {
   const creditScorePercent = getCreditScorePercent(cibilScore);
   const latestTimeline = latestCrmStatus?.timeline || [];
   const latestTimelineIndex = latestTimeline.length ? getCurrentTimelineIndex(latestTimeline, latestCrmStatus) : -1;
-  const latestUsesTimelineProgress = Boolean(latestCrmStatus?.dashboardCurrentStageKey && latestTimeline.length);
-  const applicationProgress = Math.min(
-    100,
-    Math.max(
-      0,
-      Number(
-        latestUsesTimelineProgress
-          ? ((latestTimelineIndex + 1) / latestTimeline.length) * 100
-          : latestCrmStatus?.dashboardProgressPercent ?? latestCrmStatus?.progressPercent ?? 0
-      )
-    )
-  );
+  const applicationProgress = getApplicationProgress(latestCrmStatus, latestTimeline, latestTimelineIndex);
   const showLatestNextStep =
     !["loan_disbursed", "repayment_received"].includes(String(latestCrmStatus?.dashboardCurrentStageKey || "")) &&
     Boolean(latestCrmStatus?.dashboardNextExpectedAction || latestCrmStatus?.nextExpectedAction);
@@ -671,35 +678,33 @@ const LoanDashboard = () => {
           const outstandingAmount = Number(loan.outstandingAmount || 0);
           const paidAmount = Number(loan.paidAmount || 0);
           const interestAccrued = Number(loan.interestAccrued || 0);
-          const dueDateValue = crmStatus
-            ? formatDateTime(loan.dueDate || crmStatus.lastUpdatedAt)
-            : formatDateTime(loan.dueDate);
+          const dueDateValue = formatDateTime(loan.dueDate);
           const detailCards = [
             { icon: IndianRupee, label: "Requested Loan Amount", value: formatINR(requestedLoanAmount) },
             { icon: ShieldCheck, label: "Approved Loan Amount", value: formatINR(approvedLoanAmount) },
             { icon: ReceiptText, label: "Outstanding Amount", value: formatINR(outstandingAmount) },
             { icon: CalendarDays, label: "Disbursal Date", value: formatDate(loan.disbursalDate) },
-            { icon: CalendarDays, label: loan.dueDate ? "Due Date" : "Last Updated", value: dueDateValue },
+            { icon: CalendarDays, label: "Due Date", value: dueDateValue },
             { icon: ReceiptText, label: "Total Repayable", value: formatINR(totalRepayableAmount) },
             { icon: IndianRupee, label: "Paid Amount", value: formatINR(paidAmount) },
             { icon: ReceiptText, label: "Interest Rate", value: loan.interestRate ? String(loan.interestRate) : "-" },
             { icon: IndianRupee, label: "Interest Accrued", value: formatINR(interestAccrued) },
-            ...(crmStatus?.sanction
+            ...(crmStatus
               ? [
                   {
                     icon: ReceiptText,
                     label: "Agreement No.",
-                    value: crmStatus.sanction.agreementNumber || "-",
+                    value: loan.agreementNumber || crmStatus.disbursement?.agreementNumber || crmStatus.sanction?.agreementNumber || "-",
                   },
                   {
                     icon: IndianRupee,
                     label: "Disbursed Amount",
-                    value: formatINR(Number(crmStatus.sanction.disbursedAmount || 0)),
+                    value: formatINR(Number(loan.disbursedAmount || crmStatus.disbursement?.disbursedAmount || crmStatus.sanction?.disbursedAmount || 0)),
                   },
                   {
                     icon: ShieldCheck,
                     label: "Disbursement",
-                    value: crmStatus.disbursement?.status || "-",
+                    value: loan.disbursementStatus || crmStatus.disbursement?.status || "-",
                   },
                 ]
               : []),
@@ -712,7 +717,7 @@ const LoanDashboard = () => {
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <h2 className="min-w-0 break-words text-xl font-extrabold leading-tight text-[#071d3a] [overflow-wrap:anywhere]">
-                      Loan #{loan.id}
+                      Loan #{loan.loanId || loan.id}
                     </h2>
                     {(crmStatus?.publicStatus || crmStatus?.crmStatus) && (
                       <span className="rounded-full bg-green-50 px-3 py-1 text-sm font-bold text-green-700 ring-1 ring-green-100">
