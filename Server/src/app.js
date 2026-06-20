@@ -243,16 +243,6 @@ app.use("/api/pan", panRoutes);
 app.use("/api/aadhaar", aadhaarRoutes);
 app.use("/api/react-aadhaar", reactAadhaarRoutes);
 
-app.get("/api/test-repayment/:id", async (req, res) => {
-  try {
-    const { fetchCrmRepaymentDetails } = await import("./services/repayment.service.js");
-    const data = await fetchCrmRepaymentDetails(req.params.id);
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 app.use(errorHandler);
 
 export default app;

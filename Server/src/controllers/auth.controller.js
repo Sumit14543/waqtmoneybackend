@@ -12,6 +12,7 @@ import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 import { fetchCrmRepaymentDetails } from "../services/repayment.service.js";
 import { ACTIVE_APPLICATION_MESSAGE, checkActiveApplicationInCRM } from "../services/crm.service.js";
 import { parseCookies } from "../utils/cookies.js";
+import { normalizeDashboardCrmTimeline } from "../utils/dashboardCrm.js";
 
 const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const APPLICATION_TABLE = "waqt_money_loan_applications";
@@ -522,14 +523,17 @@ const getDashboardCrmPresentation = (crmStatus = {}) => {
 const withDashboardCrmStage = (crmStatus = null) => {
   if (!crmStatus) return null;
   const presentation = getDashboardCrmPresentation(crmStatus);
+  const dashboardCurrentStageKey = getDashboardCrmStageKey(crmStatus);
 
   return {
     ...crmStatus,
-    dashboardCurrentStageKey: getDashboardCrmStageKey(crmStatus),
+    timeline: normalizeDashboardCrmTimeline(crmStatus.timeline),
+    dashboardCurrentStageKey,
     dashboardStatusTitle: presentation.statusTitle,
     dashboardStatusDescription: presentation.statusDescription,
     dashboardNextExpectedAction: presentation.nextExpectedAction,
     dashboardProgressPercent: presentation.progressPercent,
+    dashboardIsComplete: ["loan_disbursed", "repayment_received"].includes(dashboardCurrentStageKey),
   };
 };
 

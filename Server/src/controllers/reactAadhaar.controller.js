@@ -4,9 +4,10 @@ import logger from "../utils/logger.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
 const DIGITAP_BASE_URL = String(process.env.DIGITAP_BASE_URL || "https://apidemo.digitap.work").replace(/\/$/, "");
-const AADHAAR_CALLBACK_URL = process.env.DIGITAP_AADHAAR_CALLBACK_URL ||
-  "https://waqt-testing-api.waqtmoney.com/api/react-aadhaar/callback";
-const AADHAAR_CLIENT_BASE_URL = "https://waqt-testing.waqtmoney.com";
+const API_PUBLIC_BASE_URL = String(process.env.API_PUBLIC_BASE_URL || "http://localhost:5000/api").replace(/\/$/, "");
+const AADHAAR_CALLBACK_URL =
+  process.env.DIGITAP_AADHAAR_CALLBACK_URL || `${API_PUBLIC_BASE_URL}/react-aadhaar/callback`;
+const AADHAAR_CLIENT_BASE_URL = String(process.env.CLIENT_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
 const getCallbackClientBaseUrl = (req) => {
   try {
     const origin = req && (req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null));
@@ -180,13 +181,19 @@ const getCallbackIdentifier = (query, keys) => {
   return "";
 };
 
-const compactCallbackQuery = (query) =>
-  Object.fromEntries(
-    Object.entries(query || {}).map(([key, value]) => [
-      key,
-      Array.isArray(value) ? value.map(String).join(",") : String(value ?? ""),
-    ])
-  );
+const summarizeCallbackPayload = (payload) => ({
+  keys: Object.keys(payload || {}).sort(),
+  hasData: Boolean(payload?.data),
+  hasTransactionId: Boolean(
+    payload?.txnId ||
+      payload?.transactionId ||
+      payload?.transaction_id ||
+      payload?.referenceId ||
+      payload?.reference_id
+  ),
+  status: String(payload?.status || payload?.success || "").slice(0, 40),
+  hasError: Boolean(payload?.error || payload?.error_code || payload?.errorCode),
+});
 
 const redirectAadhaarFailure = (req, res, reason) =>
   res.redirect(
@@ -345,7 +352,7 @@ export const handleReactAadhaarCallback = async (req, res) => {
 
   try {
     const callbackPayload = getCallbackPayload(req);
-    logger.info("Digitap Aadhaar callback payload:", compactCallbackQuery(callbackPayload));
+    logger.info("Digitap Aadhaar callback received:", summarizeCallbackPayload(callbackPayload));
 
     const transactionId = getCallbackIdentifier(callbackPayload, [
       "txnId", "transactionId", "transaction_id", "referenceId", "reference_id",
