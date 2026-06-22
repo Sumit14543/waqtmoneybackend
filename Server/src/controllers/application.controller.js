@@ -23,6 +23,7 @@ import db from "../configs/db.js";
 import {
   CASHFREE_PRODUCTION_BASE_URL,
   CASHFREE_SANDBOX_BASE_URL,
+  LOCAL_API_PUBLIC_BASE_URL,
   LOCAL_WEB_ORIGINS,
   PRODUCTION_WEB_ORIGINS,
 } from "../configs/integrations.js";
@@ -34,6 +35,8 @@ import {
 } from "../middleware/applicationSession.middleware.js";
 import { parseCookies } from "../utils/cookies.js";
 import logger from "../utils/logger.js";
+import { applicationContactMatches, hasApplicationContactProof } from "../utils/applicationRecoveryPolicy.js";
+import { getTrustedHttpsOrigin } from "../utils/originPolicy.js";
 
 const CASHFREE_API_VERSION = process.env.CASHFREE_API_VERSION || "2023-08-01";
 const CASHFREE_ENV = (process.env.CASHFREE_ENV || "production").toLowerCase();
@@ -101,7 +104,12 @@ export const applyLoan = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: "Application submitted",
-      data: result,
+      data: {
+        ...result,
+        applicationUploadToken: createApplicationUploadToken({
+          applicationId: result.applicationId,
+        }),
+      },
     });
 
   } catch (err) {
@@ -112,31 +120,6 @@ export const applyLoan = async (req, res, next) => {
 const normalizeSessionMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const normalizeSessionEmail = (value) => String(value || "").trim().toLowerCase();
 const normalizeSessionPan = (value) => String(value || "").trim().toUpperCase();
-const DRAFT_SESSION_RECOVERY_TTL_MS = Number(
-  process.env.DRAFT_UPLOAD_RECOVERY_TTL_MS || 72 * 60 * 60 * 1000
-);
-
-const isRecoverableDraftApplication = (application) => {
-  if (!application) return false;
-  if (Number(application.lead_visible || 0) === 1) return false;
-  if (application.completed_at) return false;
-  if (application.current_step === "video_kyc_completed") return false;
-
-  const activityDate = application.last_activity_at || application.created_at;
-  const activityTime = activityDate ? new Date(activityDate).getTime() : 0;
-
-  return Number.isFinite(activityTime) && Date.now() - activityTime <= DRAFT_SESSION_RECOVERY_TTL_MS;
-};
-
-const isActiveDraftApplication = (application) => {
-  if (!application) return false;
-  if (Number(application.lead_visible || 0) === 1) return false;
-  if (application.completed_at) return false;
-
-  const step = String(application.current_step || "").toLowerCase();
-  return !["video_kyc_completed", "loan_closed", "rejected", "cancelled"].includes(step);
-};
-
 const sendRecoveredApplicationSession = (res, application, applicationId) => {
   const recoveredApplicationId = application?.application_id || applicationId;
   const recoveredMobile = normalizeSessionMobile(application?.mobile);
@@ -172,34 +155,29 @@ export const recoverApplicationSession = async (req, res, next) => {
       });
     }
 
-    const application = await getApplicationById(applicationId);
+    const uploadSession = verifyApplicationUploadToken(uploadToken, applicationId);
 
     if (
-      application &&
-      verifyApplicationUploadToken(uploadToken, application.application_id || applicationId)
+      !uploadSession &&
+      !hasApplicationContactProof({ mobile: requestMobile, email: requestEmail, pan: requestPan })
     ) {
-      return sendRecoveredApplicationSession(res, application, applicationId);
-    }
-
-    if (!requestMobile && !requestEmail && !requestPan) {
-      if (isRecoverableDraftApplication(application) || isActiveDraftApplication(application)) {
-        return sendRecoveredApplicationSession(res, application, applicationId);
-      }
-
       return res.status(401).json({
         success: false,
         message: "Application session expired. Please start again.",
       });
     }
 
-    const applicationMobile = normalizeSessionMobile(application?.mobile);
-    const applicationEmail = normalizeSessionEmail(application?.email);
-    const applicationPan = normalizeSessionPan(application?.pan_number);
-    const mobileMatches = requestMobile && applicationMobile && requestMobile === applicationMobile;
-    const emailMatches = requestEmail && applicationEmail && requestEmail === applicationEmail;
-    const panMatches = requestPan && applicationPan && requestPan === applicationPan;
+    const application = await getApplicationById(applicationId);
 
-    if (!application || (!mobileMatches && !emailMatches && !panMatches && !isActiveDraftApplication(application))) {
+    if (application && uploadSession) {
+      return sendRecoveredApplicationSession(res, application, applicationId);
+    }
+
+    if (!application || !applicationContactMatches(application, {
+      mobile: requestMobile,
+      email: requestEmail,
+      pan: requestPan,
+    })) {
       return res.status(401).json({
         success: false,
         message: "Application session expired. Please start again.",
@@ -762,36 +740,59 @@ const getOptionalHttpsUrl = (value) => {
   return isHttpsUrl(url) ? url : "";
 };
 
-const isLocalUrl = (value = "") => /localhost|127\.0\.0\.1|::1/i.test(String(value));
-
 const getTrustedRequestOrigin = (req) => {
-  const origin = String(req.headers.origin || "").trim().replace(/\/$/, "");
   const clientBaseUrl = getPublicClientBaseUrl();
   const cashfreeAllowedOrigins = String(process.env.CASHFREE_ALLOWED_ORIGIN || "")
     .split(",")
-    .map((value) => value.trim().replace(/\/$/, ""))
+    .map((value) => value.trim())
     .filter(Boolean);
-  const allowedOrigins = new Set(
-    [
-      ...DEFAULT_PAYMENT_ORIGINS,
-      clientBaseUrl,
-      ...cashfreeAllowedOrigins,
-    ]
-      .map((value) => String(value || "").trim().replace(/\/$/, ""))
-      .filter(Boolean),
-  );
 
-  return isHttpsUrl(origin) && allowedOrigins.has(origin) ? origin : "";
+  return getTrustedHttpsOrigin(req.headers.origin, [
+    ...DEFAULT_PAYMENT_ORIGINS,
+    clientBaseUrl,
+    ...cashfreeAllowedOrigins,
+  ]);
 };
 
 const assertTrustedPaymentOrigin = (req) => {
-  if (!isCashfreeProduction || process.env.NODE_ENV !== "production") return;
+  if (!isCashfreeProduction || !isProductionRuntime()) return;
 
-  const requestOrigin = String(req.headers.origin || "").trim().replace(/\/$/, "");
-
-  if (!requestOrigin || isLocalUrl(requestOrigin) || !isHttpsUrl(requestOrigin)) {
+  if (!getTrustedRequestOrigin(req)) {
     throw createBadRequest("Payment requests must come from the approved Waqt Money domain");
   }
+};
+
+const getPublicApiBaseUrl = () => {
+  const baseUrl = String(process.env.API_PUBLIC_BASE_URL || LOCAL_API_PUBLIC_BASE_URL || "").trim().replace(/\/$/, "");
+  if (!baseUrl) return "";
+  return baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
+};
+
+const withCashfreeWebhookToken = (url) => {
+  const token = String(process.env.CASHFREE_WEBHOOK_TOKEN || "").trim();
+  if (!url || !token) return url;
+
+  try {
+    const parsedUrl = new URL(url);
+    if (!parsedUrl.searchParams.has("cf_token")) {
+      parsedUrl.searchParams.set("cf_token", token);
+    }
+    return parsedUrl.toString();
+  } catch {
+    return url;
+  }
+};
+
+const getCashfreeNotifyUrl = () => {
+  const configuredNotifyUrl = getOptionalHttpsUrl(process.env.CASHFREE_NOTIFY_URL || process.env.CASHFREE_WEBHOOK_URL);
+  if (configuredNotifyUrl) return withCashfreeWebhookToken(configuredNotifyUrl);
+
+  const apiBaseUrl = getPublicApiBaseUrl();
+  if (isCashfreeProduction && !isHttpsUrl(apiBaseUrl)) return "";
+
+  return withCashfreeWebhookToken(
+    getOptionalHttpsUrl(`${apiBaseUrl}/application/repayment/cashfree-webhook`)
+  );
 };
 
 const getCashfreeReturnUrl = (orderId, applicationId, req, loanId = "") => {
@@ -917,6 +918,7 @@ const ensureRepaymentColumns = async () => {
     ["repayment_status", "VARCHAR(50) NULL"],
     ["repayment_paid_amount", "DECIMAL(12,2) DEFAULT 0"],
     ["repayment_last_order_id", "VARCHAR(120) NULL"],
+    ["repayment_crm_synced_order_id", "VARCHAR(120) NULL"],
     ["repayment_last_paid_at", "DATETIME NULL"],
   ];
   const [existingColumns] = await db.execute(
@@ -938,7 +940,7 @@ const ensureRepaymentColumns = async () => {
     }
 
     const shouldWidenTextColumn =
-      ["status", "repayment_status", "repayment_last_order_id"].includes(name) &&
+      ["status", "repayment_status", "repayment_last_order_id", "repayment_crm_synced_order_id"].includes(name) &&
       (String(existingColumn.DATA_TYPE).toLowerCase() !== "varchar" ||
         Number(existingColumn.CHARACTER_MAXIMUM_LENGTH || 0) < Number(definition.match(/\((\d+)\)/)?.[1] || 0));
 
@@ -1045,32 +1047,47 @@ const syncRepaymentToApplication = async (order) => {
     result = updateResult;
   }
 
-  const crmSync = await syncRepaymentToCRM({
-    sourceLeadId: effectiveApplicationId,
-    loanId:
-      getRealLoanId(order?.order_tags?.loan_id) ||
-      getRealLoanId(crmDetails?.loan_id) ||
-      getRealLoanId(application?.loan_id) ||
-      getRealLoanId(application?.crm_loan_id) ||
-      order?.order_tags?.loan_id ||
-      application?.application_id ||
-      effectiveApplicationId,
-    amount: orderAmount,
-    method: order?.payment_method || order?.payment_group || order?.paymentMethod || "ONLINE",
-    reference: order.order_id || order.cf_order_id || "",
-    gateway: "cashfree",
-    paidAt: order?.payment_time || order?.order_expiry_time || new Date().toISOString(),
-    status: "success",
-  }).catch((error) => {
-    logger.error("CRM repayment sync failed:", {
-      applicationId,
-      orderId: order.order_id,
-      message: error.message,
-      statusCode: error.statusCode,
+  const orderId = String(order.order_id || "");
+  const alreadySyncedToCrm = Boolean(
+    orderId && application?.repayment_crm_synced_order_id === orderId,
+  );
+  const crmSync = alreadySyncedToCrm
+    ? { success: true, skipped: true, reason: "already_synced" }
+    : await syncRepaymentToCRM({
+      sourceLeadId: effectiveApplicationId,
+      loanId:
+        getRealLoanId(order?.order_tags?.loan_id) ||
+        getRealLoanId(crmDetails?.loan_id) ||
+        getRealLoanId(application?.loan_id) ||
+        getRealLoanId(application?.crm_loan_id) ||
+        order?.order_tags?.loan_id ||
+        application?.application_id ||
+        effectiveApplicationId,
+      amount: orderAmount,
+      method: order?.payment_method || order?.payment_group || order?.paymentMethod || "ONLINE",
+      reference: orderId || order.cf_order_id || "",
+      gateway: "cashfree",
+      paidAt: order?.payment_time || order?.order_expiry_time || new Date().toISOString(),
+      status: "success",
+    }).catch((error) => {
+      logger.error("CRM repayment sync failed:", {
+        applicationId,
+        orderId,
+        message: error.message,
+        statusCode: error.statusCode,
+      });
+      return null;
     });
-    return null;
-  });
 
+  if (application && orderId && crmSync && !alreadySyncedToCrm) {
+    const lookup = String(effectiveApplicationId).trim();
+    await db.execute(
+      `UPDATE waqt_money_loan_applications
+       SET repayment_crm_synced_order_id = ?, last_activity_at = NOW()
+       WHERE (application_id = ? OR id = ?)`,
+      [orderId, lookup, /^\d+$/.test(lookup) ? Number(lookup) : 0],
+    );
+  }
   return {
     applicationId: effectiveApplicationId,
     requestedPaymentType: paymentType === "part" ? "part" : "full",
@@ -1327,7 +1344,7 @@ export const createRepaymentPaymentOrder = async (req, res, next) => {
       Date.now(),
     ].join("_");
     const returnUrl = getCashfreeReturnUrl(orderId, crmApplicationId, req, crmLoanId);
-    const notifyUrl = getOptionalHttpsUrl(process.env.CASHFREE_NOTIFY_URL);
+    const notifyUrl = getCashfreeNotifyUrl();
     const orderMeta = {
       ...(returnUrl ? { return_url: returnUrl } : {}),
       ...(notifyUrl ? { notify_url: notifyUrl } : {}),
@@ -1397,6 +1414,70 @@ export const createRepaymentPaymentOrder = async (req, res, next) => {
   }
 };
 
+const getCashfreeWebhookOrderId = (body = {}) => {
+  const candidates = [
+    body.order_id,
+    body.orderId,
+    body.data?.order_id,
+    body.data?.orderId,
+    body.data?.order?.order_id,
+    body.data?.order?.orderId,
+    body.order?.order_id,
+    body.order?.orderId,
+    body.order_details?.order_id,
+    body.orderDetails?.orderId,
+  ];
+
+  return String(candidates.find(Boolean) || "").trim();
+};
+
+const assertCashfreeWebhookAccess = (req) => {
+  const expectedToken = String(process.env.CASHFREE_WEBHOOK_TOKEN || "").trim();
+  if (!expectedToken) return;
+
+  const receivedToken = String(
+    req.headers["x-cashfree-webhook-token"] ||
+      req.headers["x-webhook-token"] ||
+      req.query.cf_token ||
+      req.query.token ||
+      ""
+  ).trim();
+
+  if (receivedToken !== expectedToken) {
+    const error = new Error("Invalid Cashfree webhook token");
+    error.statusCode = 401;
+    throw error;
+  }
+};
+
+export const handleCashfreeRepaymentWebhook = async (req, res, next) => {
+  try {
+    assertCashfreeWebhookAccess(req);
+
+    const orderId = getCashfreeWebhookOrderId(req.body || {});
+    if (!orderId) {
+      logger.warn("Cashfree repayment webhook received without order_id", {
+        event: req.body?.type || req.body?.event || req.body?.event_type,
+      });
+      return res.status(202).json({ success: true, message: "Webhook received without order id" });
+    }
+
+    const order = await getCashfreeOrder(orderId);
+    const repaymentSync = await syncRepaymentToApplication(order);
+
+    return res.status(200).json({
+      success: true,
+      message: "Cashfree repayment webhook processed",
+      data: {
+        orderId: order.order_id,
+        orderStatus: order.order_status,
+        repaymentSync,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
 export const getRepaymentPaymentStatus = async (req, res, next) => {
   try {
     const tokenPayload = readRepaymentAccessToken(getRepaymentAccessTokenFromRequest(req));

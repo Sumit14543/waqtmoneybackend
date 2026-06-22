@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import { getAppSecret } from "../configs/secrets.js";
 import { getApplicationById } from "../services/application.service.js";
 import { parseCookies } from "../utils/cookies.js";
+import { applicationContactMatches, hasApplicationContactProof } from "../utils/applicationRecoveryPolicy.js";
 
 export const APPLICATION_SESSION_COOKIE = "application_session";
 const APPLICATION_SESSION_TTL_MS = Number(process.env.APPLICATION_SESSION_TTL_MS || 7 * 24 * 60 * 60 * 1000);
@@ -92,7 +93,6 @@ const getApplicationCookieDomain = () => {
 
   return undefined;
 };
-
 const getApplicationSessionFromRequest = (req, requestedApplicationId = "") => {
   const cookieTokens = getCookieValues(req, APPLICATION_SESSION_COOKIE);
   const parsedCookieToken = parseCookies(req)[APPLICATION_SESSION_COOKIE];
@@ -210,30 +210,7 @@ export const requireApplicationSession = async (req, res, next) => {
     getHeaderValue(req, "x-application-pan") || req.body?.applicationPan
   );
 
-  if (!requestMobile && !requestEmail && !requestPan) {
-    try {
-      const application = await getApplicationById(requestedApplicationId);
-
-      if (isRecentDraftApplication(application) || isActiveDraftApplication(application)) {
-        const applicationMobile = normalizeMobile(application.mobile);
-
-        req.applicationSession = {
-          applicationId: application.application_id || requestedApplicationId,
-          mobile: applicationMobile,
-          recovered: true,
-          viaRecentDraft: isRecentDraftApplication(application),
-          viaDraftApplication: !isRecentDraftApplication(application),
-        };
-        setApplicationSessionCookie(res, {
-          applicationId: application.application_id || requestedApplicationId,
-          mobile: applicationMobile,
-        });
-        return next();
-      }
-    } catch (error) {
-      return next(error);
-    }
-
+  if (!hasApplicationContactProof({ mobile: requestMobile, email: requestEmail, pan: requestPan })) {
     return res.status(401).json({
       success: false,
       message: "Application session expired. Please start again.",
@@ -256,7 +233,11 @@ export const requireApplicationSession = async (req, res, next) => {
       });
     }
 
-    if (!mobileMatches && !emailMatches && !panMatches && !isActiveDraftApplication(application)) {
+    if (!applicationContactMatches(application, {
+      mobile: requestMobile,
+      email: requestEmail,
+      pan: requestPan,
+    })) {
       return res.status(401).json({
         success: false,
         message: "Application session expired. Please start again.",
@@ -381,30 +362,7 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
     getHeaderValue(req, "x-application-pan") || req.body?.applicationPan
   );
 
-  if (!requestMobile && !requestEmail && !requestPan) {
-    try {
-      const application = await getApplicationById(requestedApplicationId);
-
-      if (isRecentDraftApplication(application) || isActiveDraftApplication(application)) {
-        const applicationMobile = normalizeMobile(application.mobile);
-
-        req.applicationSession = {
-          applicationId: application.application_id || requestedApplicationId,
-          mobile: applicationMobile,
-          recovered: true,
-          viaRecentDraft: isRecentDraftApplication(application),
-          viaDraftApplication: !isRecentDraftApplication(application),
-        };
-        setApplicationSessionCookie(res, {
-          applicationId: application.application_id || requestedApplicationId,
-          mobile: applicationMobile,
-        });
-        return next();
-      }
-    } catch (error) {
-      return next(error);
-    }
-
+  if (!hasApplicationContactProof({ mobile: requestMobile, email: requestEmail, pan: requestPan })) {
     return rejectRecoveredSession(req, res);
   }
 
@@ -421,7 +379,11 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
       return rejectRecoveredSession(req, res);
     }
 
-    if (!mobileMatches && !emailMatches && !panMatches && !isActiveDraftApplication(application)) {
+    if (!applicationContactMatches(application, {
+      mobile: requestMobile,
+      email: requestEmail,
+      pan: requestPan,
+    })) {
       return rejectRecoveredSession(req, res);
     }
 

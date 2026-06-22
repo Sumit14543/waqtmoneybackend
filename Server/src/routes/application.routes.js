@@ -16,6 +16,7 @@ import {
   getApp,
   getRepaymentDetails,
   getRepaymentPaymentStatus,
+  handleCashfreeRepaymentWebhook,
   recoverApplicationSession,
   sendRepaymentOtp,
   saveContactQuery,
@@ -135,6 +136,7 @@ router.post("/repayment/verify-otp", verifyRepaymentOtp);
 router.post("/repayment/create-payment-order", createRepaymentPaymentOrder);
 router.get("/repayment/details/:id", getRepaymentDetails);
 router.get("/repayment/payment-status/:orderId", getRepaymentPaymentStatus);
+router.post("/repayment/cashfree-webhook", handleCashfreeRepaymentWebhook);
 router.post("/recover-session", recoverApplicationSession);
 router.get("/ifsc/:ifsc", getIfscDetails);
 router.get("/uan/:id", requireApplicationSession, getApplicationUan);

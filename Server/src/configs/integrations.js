@@ -12,7 +12,6 @@ const uniqueList = (items) => [...new Set(items.filter(Boolean))];
 export const PRODUCTION_WEB_ORIGINS = listFromEnv(process.env.PRODUCTION_WEB_ORIGINS, [
   "https://waqtmoney.com",
   "https://www.waqtmoney.com",
-  "https://waqt-testing.waqtmoney.com",
 ]);
 export const LOCAL_WEB_ORIGINS = listFromEnv(process.env.LOCAL_WEB_ORIGINS, [
   "http://localhost:8080",
@@ -22,7 +21,6 @@ export const LOCAL_API_PUBLIC_BASE_URL =
   process.env.LOCAL_API_PUBLIC_BASE_URL || "http://localhost:5000/api";
 
 const DEFAULT_CRM_API_BASE_URLS = [
-  "https://testing-api.waqtmoney.com",
   "https://payday-api.waqtmoney.com",
 ];
 const configuredCrmBaseUrls = listFromEnv(
