@@ -64,7 +64,7 @@ jobs:
 
       - name: Test SSH Connection
         run: |
-          ssh -p "${REMOTE_PORT}" \
+          ssh -v -p "${REMOTE_PORT}" \
             -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             "${REMOTE_USER}@${REMOTE_HOST}" "echo Connected Successfully"
