@@ -6,7 +6,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "test": "node --test --test-isolation=none src/**/*.test.js",
+    "test": "node --test src/**/*.test.js",
     "start": "node Server.js"
   },
   "keywords": [],
