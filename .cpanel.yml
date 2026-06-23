@@ -1,0 +1,6 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/waqtmoney/public_html
+    - /bin/mkdir -p $DEPLOYPATH/backend
+    - /bin/rsync -avz --exclude="node_modules" --exclude=".env" Server/ $DEPLOYPATH/backend/

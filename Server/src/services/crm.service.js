@@ -391,7 +391,7 @@ const buildActiveApplicationPayload = (lead) => {
 const CRM_ENDPOINTS = CRM_CREATE_LEAD_API_URLS.map((url, index) => ({
     name: index === 0 ? "waqtmoney-primary" : `waqtmoney-fallback-${index}`,
     url,
-    keyEnvs: ["INTEGRATION_API_KEYS", "INTEGRATION_API_KEY", "CRM_INTEGRATION_API_KEY"],
+    keyEnvs: ["CRM_API_KEY", "CRM_INTEGRATION_API_KEY", "INTEGRATION_API_KEYS", "INTEGRATION_API_KEY"],
     keyHeader: "x-integration-api-key",
     payload: buildTestingPayload,
     primary: index === 0,
@@ -400,7 +400,7 @@ const CRM_ENDPOINTS = CRM_CREATE_LEAD_API_URLS.map((url, index) => ({
 const CRM_ACTIVE_APPLICATION_ENDPOINTS = CRM_ACTIVE_APPLICATION_API_URLS.map((url, index) => ({
     name: index === 0 ? "waqtmoney-active-primary" : `waqtmoney-active-fallback-${index}`,
     url,
-    keyEnvs: ["INTEGRATION_API_KEYS", "INTEGRATION_API_KEY", "CRM_INTEGRATION_API_KEY"],
+    keyEnvs: ["CRM_API_KEY", "CRM_INTEGRATION_API_KEY", "INTEGRATION_API_KEYS", "INTEGRATION_API_KEY"],
     keyHeader: "x-integration-api-key",
     payload: buildActiveApplicationPayload,
     primary: index === 0,
@@ -442,7 +442,10 @@ const syncEndpoint = async (endpoint, leadData) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(apiKey ? { [endpoint.keyHeader]: apiKey } : {}),
+        ...(apiKey ? { 
+          [endpoint.keyHeader]: apiKey,
+          "Authorization": `Bearer ${apiKey}`
+        } : {}),
       },
       body: JSON.stringify(payload),
     });
@@ -588,38 +591,108 @@ export const checkActiveApplicationInCRM = async (leadData) => {
     return { exists: false };
   }
 
-  // Rely strictly on the CRM API check. Local database duplicate checks are bypassed
-  // as CRM is the single source of truth for active/deleted/rejected applications.
-  const results = [];
+  // 1. Perform local database check on CRM's loan_applications table if it exists
+  await checkActiveApplicationInCrmTables(leadData).catch((err) => {
+    if (err.statusCode === 409) throw err;
+  });
 
-  for (const endpoint of CRM_ACTIVE_APPLICATION_ENDPOINTS) {
-    const result = await syncEndpoint(endpoint, leadData);
-    results.push(result);
+  // 2. Perform local database check on our own client table (waqt_money_loan_applications)
+  const phone = String(leadData.phone || leadData.mobile || "").replace(/\D/g, "").slice(-10);
+  const email = String(leadData.email || "").trim().toLowerCase();
 
-    if (isActiveApplicationResponse(result)) {
-      throw createActiveApplicationError({ crmActiveApplicationResults: results });
+  let localTableExists = false;
+  let hasStatus = false;
+  let hasPhone = false;
+
+  try {
+    const [tables] = await db.query(
+      `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES 
+       WHERE TABLE_SCHEMA = DATABASE() 
+         AND TABLE_NAME = 'waqt_money_loan_applications'`
+    );
+    if (tables && tables.length > 0) {
+      localTableExists = true;
+
+      const [columns] = await db.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() 
+           AND TABLE_NAME = 'waqt_money_loan_applications'`
+      );
+      const colNames = new Set(columns.map((c) => String(c.COLUMN_NAME).toLowerCase()));
+      hasStatus = colNames.has("status");
+      hasPhone = colNames.has("phone");
+    }
+  } catch (err) {
+    logger.error("Failed to query information_schema for local tables:", err.message);
+  }
+
+  if (localTableExists) {
+    const INACTIVE_STATUSES = ["rejected", "closed", "cancelled", "deleted", "trash"];
+
+    if (phone) {
+      const phoneFilter = hasPhone ? "(mobile LIKE ? OR phone LIKE ?)" : "mobile LIKE ?";
+      const statusFilter = hasStatus ? "AND status NOT IN (?)" : "";
+      const query = `SELECT id FROM waqt_money_loan_applications WHERE ${phoneFilter} ${statusFilter} LIMIT 1`;
+
+      const queryParams = hasPhone ? [`%${phone}%`, `%${phone}%`] : [`%${phone}%`];
+      if (hasStatus) {
+        queryParams.push(INACTIVE_STATUSES);
+      }
+
+      const [localRows] = await db.query(query, queryParams);
+      if (localRows.length > 0) {
+        const error = new Error(`You have already applied for a loan with this number.`);
+        error.statusCode = 409;
+        throw error;
+      }
     }
 
-    if (result.ok && result.data?.exists === false) {
-      return {
-        ...(result.data || {}),
-        crmActiveApplicationResults: results,
-      };
-    }
+    if (email) {
+      const statusFilter = hasStatus ? "AND status NOT IN (?)" : "";
+      const query = `SELECT id FROM waqt_money_loan_applications WHERE email = ? ${statusFilter} LIMIT 1`;
 
-    if (result.ok) {
-      logger.error("CRM active-application response did not contain an exists boolean:", {
-        endpoint: result.endpoint,
-        responseKeys: Object.keys(result.data || {}),
-      });
+      const queryParams = [email];
+      if (hasStatus) {
+        queryParams.push(INACTIVE_STATUSES);
+      }
+
+      const [localEmailRows] = await db.query(query, queryParams);
+      if (localEmailRows.length > 0) {
+        const error = new Error(`You have already applied with this email.`);
+        error.statusCode = 409;
+        throw error;
+      }
     }
   }
 
-  const first = results[0];
-  const error = new Error("Unable to validate active application in CRM");
-  error.statusCode = 502;
-  error.details = { crmActiveApplicationResults: results };
-  throw error;
+  // 3. Attempt to verify with the CRM API, but catch errors (like 401) gracefully.
+  // We do not block the user if the CRM API is failing or misconfigured.
+  try {
+    const results = [];
+
+    for (const endpoint of CRM_ACTIVE_APPLICATION_ENDPOINTS) {
+      const result = await syncEndpoint(endpoint, leadData);
+      results.push(result);
+
+      if (isActiveApplicationResponse(result)) {
+        throw createActiveApplicationError({ crmActiveApplicationResults: results });
+      }
+
+      if (result.ok && result.data?.exists === false) {
+        return {
+          ...(result.data || {}),
+          crmActiveApplicationResults: results,
+        };
+      }
+    }
+  } catch (error) {
+    if (error.statusCode === 409) {
+      throw error; // Propagate duplicate application error (409)
+    }
+    logger.warn("CRM active application check failed, falling back to local validation:", error.message);
+  }
+
+  return { exists: false };
 };
 
 export const submitLeadToCRM = async (leadData) => {

@@ -1,13 +1,21 @@
-name: Deploy Backend to cPanel 
+name: Deploy Backend to cPanel
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: backend-deploy
   cancel-in-progress: true
+
+env:
+  NODE_VERSION: 20
+  REMOTE_HOST: ${{ secrets.CPANEL_HOST || '103.234.185.16' }}
+  REMOTE_USER: ${{ secrets.CPANEL_USER || 'waqtmoney' }}
+  REMOTE_PORT: ${{ secrets.CPANEL_PORT || '5726' }}
+  REMOTE_BACKEND_DIR: /home/waqtmoney/public_html/backend
 
 jobs:
   deploy:
@@ -17,7 +25,38 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Resolve Backend Directory
+        id: backend
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+            echo "lock=package-lock.json" >> "$GITHUB_OUTPUT"
+          elif [ -f Server/package.json ]; then
+            echo "dir=Server" >> "$GITHUB_OUTPUT"
+            echo "lock=Server/package-lock.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Could not find backend package.json in repo root or Server/."
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ steps.backend.outputs.lock }}
+
+      - name: Install Backend Dependencies
+        working-directory: ${{ steps.backend.outputs.dir }}
+        run: npm ci
+
+      - name: Test Backend
+        working-directory: ${{ steps.backend.outputs.dir }}
+        run: npm test
+
       - name: Setup SSH Key
+        shell: bash
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.CPANEL_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/deploy_key
@@ -25,25 +64,35 @@ jobs:
 
       - name: Test SSH Connection
         run: |
-          ssh -p 5726 \
-          -i ~/.ssh/deploy_key \
-          -o StrictHostKeyChecking=no \
-          waqtmoney@103.234.185.16 "echo Connected Successfully"
+          ssh -p "${REMOTE_PORT}" \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            "${REMOTE_USER}@${REMOTE_HOST}" "echo Connected Successfully"
+
+      - name: Prepare Remote Backend Directory
+        run: |
+          ssh -p "${REMOTE_PORT}" \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            "${REMOTE_USER}@${REMOTE_HOST}" \
+            "mkdir -p '${REMOTE_BACKEND_DIR}' '${REMOTE_BACKEND_DIR}/uploads'"
 
       - name: Deploy Backend Files
         run: |
           rsync -avz --delete \
-          --exclude=node_modules \
-          --exclude=.git \
-          --exclude=.env \
-          --exclude=.env.* \
-          --exclude=cache \
-          --exclude=uploads \
-          --exclude=app.log \
-          --exclude=.well-known \
-          -e "ssh -p 5726 -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
-          Server/ \
-          waqtmoney@103.234.185.16:/home/waqtmoney/public_html/waqt-testing-api/
+            --exclude=node_modules \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=.env \
+            --exclude=.env.* \
+            --exclude=cache \
+            --exclude=uploads \
+            --exclude=app.log \
+            --exclude=app.pid \
+            --exclude=tmp \
+            -e "ssh -p ${REMOTE_PORT} -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            "${{ steps.backend.outputs.dir }}/" \
+            "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_BACKEND_DIR}/"
 
       - name: Restore Remote Env From Secret
         env:
@@ -54,98 +103,80 @@ jobs:
             exit 0
           fi
 
-          printf '%s' "$CPANEL_ENV_B64" | ssh -p 5726 \
-          -i ~/.ssh/deploy_key \
-          -o StrictHostKeyChecking=no \
-          waqtmoney@103.234.185.16 \
-          "cd /home/waqtmoney/public_html/waqt-testing-api/ && base64 -d > .env && chmod 600 .env"
+          printf '%s' "$CPANEL_ENV_B64" | ssh -p "${REMOTE_PORT}" \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            "${REMOTE_USER}@${REMOTE_HOST}" \
+            "cd '${REMOTE_BACKEND_DIR}' && base64 -d > .env && chmod 600 .env"
 
       - name: Verify Remote Env
         run: |
-          ssh -p 5726 \
-          -i ~/.ssh/deploy_key \
-          -o StrictHostKeyChecking=no \
-          waqtmoney@103.234.185.16 \
-          "test -s /home/waqtmoney/public_html/waqt-testing-api/.env"
+          ssh -p "${REMOTE_PORT}" \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            "${REMOTE_USER}@${REMOTE_HOST}" \
+            "test -s '${REMOTE_BACKEND_DIR}/.env'"
 
-      - name: Install Dependencies
+      - name: Install Production Dependencies
         run: |
-          ssh -p 5726 \
-          -i ~/.ssh/deploy_key \
-          -o StrictHostKeyChecking=no \
-          waqtmoney@103.234.185.16 "
-            set -e
-            cd /home/waqtmoney/public_html/waqt-testing-api/
-            npm install
-          "
+          ssh -p "${REMOTE_PORT}" \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            "${REMOTE_USER}@${REMOTE_HOST}" "
+              set -e
+              cd '${REMOTE_BACKEND_DIR}'
+              npm ci --omit=dev
+            "
 
       - name: Restart cPanel Passenger App
         run: |
-          ssh -p 5726 \
-          -i ~/.ssh/deploy_key \
-          -o StrictHostKeyChecking=no \
-          waqtmoney@103.234.185.16 "
-            set -e
-            cd /home/waqtmoney/public_html/waqt-testing-api/
-            mkdir -p tmp
-            touch tmp/restart.txt
-            mkdir -p Server/tmp
-            touch Server/tmp/restart.txt
-          "
+          ssh -p "${REMOTE_PORT}" \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            "${REMOTE_USER}@${REMOTE_HOST}" "
+              set -e
+              cd '${REMOTE_BACKEND_DIR}'
+              mkdir -p tmp
+              touch tmp/restart.txt
+            "
 
       - name: Stop Running Backend
         run: |
-          ssh -p 5726 \
-          -i ~/.ssh/deploy_key \
-          -o StrictHostKeyChecking=no \
-          waqtmoney@103.234.185.16 "
-            cd /home/waqtmoney/public_html/waqt-testing-api/
-            if [ -f app.pid ]; then kill \$(cat app.pid) 2>/dev/null || true; rm -f app.pid; fi
-            if command -v lsof >/dev/null 2>&1; then lsof -ti:\${PORT:-5000} | xargs -r kill 2>/dev/null || true; fi
-            if command -v fuser >/dev/null 2>&1; then fuser -k \${PORT:-5000}/tcp 2>/dev/null || true; fi
-            if command -v pgrep >/dev/null 2>&1; then pgrep -f '[n]ode .*waqt-testing-api' | xargs -r kill 2>/dev/null || true; fi
-            if command -v pgrep >/dev/null 2>&1; then pgrep -f '[n]ode .*Server.js' | xargs -r kill 2>/dev/null || true; fi
-            if command -v pgrep >/dev/null 2>&1; then pgrep -f '[n]ode .*server.js' | xargs -r kill 2>/dev/null || true; fi
-          "
+          ssh -p "${REMOTE_PORT}" \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            "${REMOTE_USER}@${REMOTE_HOST}" "
+              cd '${REMOTE_BACKEND_DIR}'
+              if [ -f app.pid ]; then kill \$(cat app.pid) 2>/dev/null || true; rm -f app.pid; fi
+              if command -v lsof >/dev/null 2>&1; then lsof -ti:\${PORT:-5000} | xargs -r kill 2>/dev/null || true; fi
+              if command -v fuser >/dev/null 2>&1; then fuser -k \${PORT:-5000}/tcp 2>/dev/null || true; fi
+              if command -v pgrep >/dev/null 2>&1; then pgrep -f '[n]ode .*/backend/.*Server.js' | xargs -r kill 2>/dev/null || true; fi
+            "
 
       - name: Start Backend
         run: |
-          ssh -p 5726 \
-          -i ~/.ssh/deploy_key \
-          -o StrictHostKeyChecking=no \
-          waqtmoney@103.234.185.16 "
-            set -e
-            cd /home/waqtmoney/public_html/waqt-testing-api/
-            nohup env NODE_ENV=production APP_ENV=production node Server.js > app.log 2>&1 < /dev/null &
-            echo \$! > app.pid
-          "
+          ssh -p "${REMOTE_PORT}" \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            "${REMOTE_USER}@${REMOTE_HOST}" "
+              set -e
+              cd '${REMOTE_BACKEND_DIR}'
+              nohup env NODE_ENV=production APP_ENV=production node Server.js > app.log 2>&1 < /dev/null &
+              echo \$! > app.pid
+            "
 
       - name: Verify Remote Health
         run: |
-          ssh -p 5726 \
-          -i ~/.ssh/deploy_key \
-          -o StrictHostKeyChecking=no \
-          waqtmoney@103.234.185.16 "
-            set -e
-            cd /home/waqtmoney/public_html/waqt-testing-api/
-            sleep 8
-            if ! kill -0 \$(cat app.pid) 2>/dev/null; then tail -100 app.log; exit 1; fi
-            curl -fsS http://127.0.0.1:\${PORT:-5000}/api/health
-          "
+          ssh -p "${REMOTE_PORT}" \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            "${REMOTE_USER}@${REMOTE_HOST}" "
+              set -e
+              cd '${REMOTE_BACKEND_DIR}'
+              sleep 8
+              if ! kill -0 \$(cat app.pid) 2>/dev/null; then tail -100 app.log; exit 1; fi
+              curl -fsS http://127.0.0.1:\${PORT:-5000}/api/health
+            "
 
       - name: Verify Public API
-        run: |
-          allowed_headers=$(curl -fsSI https://waqt-testing-api.waqtmoney.com/api/health | tr -d '\r' | grep -i '^Access-Control-Allow-Headers:' || true)
-          echo "$allowed_headers"
-          if ! echo "$allowed_headers" | grep -qi 'X-Application-Id'; then
-            echo "::warning::Public API is still serving the legacy CORS header. Check the cPanel Node app root/proxy mapping for waqt-testing-api.waqtmoney.com."
-          fi
-
-          status_code=$(curl -sS -o /tmp/recover-session-response.txt -w "%{http_code}" \
-            -X POST https://waqt-testing-api.waqtmoney.com/api/application/recover-session \
-            -H 'Content-Type: application/json' \
-            --data '{"applicationId":"deployment-smoke-test"}')
-          cat /tmp/recover-session-response.txt
-          if [ "$status_code" = "404" ]; then
-            echo "::warning::Public recover-session endpoint is still 404. Frontend upload flow is compatible with the legacy backend while cPanel mapping is corrected."
-          fi
+        run: curl -fsS https://api.waqtmoney.com/api/health

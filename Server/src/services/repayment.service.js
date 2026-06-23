@@ -8,10 +8,11 @@ const SOURCE_SYSTEM = process.env.CRM_SOURCE_SYSTEM || "waqtmoney";
 
 const getIntegrationApiKey = () =>
   (
+    process.env.INTEGRATION_API_KEYS ||
+    process.env.INTEGRATION_API_KEY ||
     process.env.CRM_REPAYMENT_API_KEY ||
     process.env.CRM_INTEGRATION_API_KEY ||
-    process.env.INTEGRATION_API_KEY ||
-    process.env.INTEGRATION_API_KEYS ||
+    process.env.CRM_API_KEY ||
     ""
   ).trim();
 

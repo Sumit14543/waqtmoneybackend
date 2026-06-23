@@ -867,6 +867,7 @@ const normalizeAmount = (amount) => {
 };
 
 const getCrmOutstandingAmount = (crmDetails = {}) => {
+  if (!crmDetails) return 0;
   const values = [crmDetails.outstanding_amount, crmDetails.crm_status?.repayment?.balanceAmount];
 
   for (const value of values) {

@@ -1,3 +1,6 @@
+# Nested repository
+frontend/
+
 # Dependencies
 node_modules/
 Server/node_modules/
@@ -14,8 +17,6 @@ Server/dist/
 Server/.vite/
 Server - Copy/
 
-# Frontend is maintained in a separate repository
-/frontend/
 
 # Environment files and secrets
 .env
