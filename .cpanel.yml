@@ -3,4 +3,8 @@ deployment:
   tasks:
     - export DEPLOYPATH=/home/waqtmoney/public_html
     - /bin/mkdir -p $DEPLOYPATH/backend
+    # 1. Deploy backend
     - /bin/rsync -avz --exclude="node_modules" --exclude=".env" Server/ $DEPLOYPATH/backend/
+    # 2. Deploy frontend (fail-safe check for dist folder)
+    - if [ -d "frontend/dist" ]; then /bin/rsync -avz frontend/dist/ $DEPLOYPATH/; else echo "Warning: frontend/dist not found. Please build frontend locally before pushing."; fi
+

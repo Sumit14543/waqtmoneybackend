@@ -397,7 +397,7 @@ export const syncRepaymentToCRM = async (repayment) => {
   const data = await readJsonOrText(response);
 
   if (!response.ok || data?.success === false) {
-    const error = new Error(data.message || "Unable to sync repayment to CRM");
+    const error = new Error(data.message || "Unable to sync repayment details");
     error.statusCode = response.status;
     error.data = data;
     throw error;

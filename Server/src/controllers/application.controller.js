@@ -580,7 +580,7 @@ const resolveRepaymentContactFromCRM = async (data = {}) => {
   const crmDetails = await fetchCrmRepaymentDetails(mobile);
 
   if (!crmDetails) {
-    const error = new Error("No active repayment found in CRM for this mobile number");
+    const error = new Error("No active repayment found for this mobile number");
     error.statusCode = 404;
     throw error;
   }
@@ -624,7 +624,7 @@ const resolveRepaymentContactFromPan = async (pan) => {
         };
       }
     }
-    const error = new Error("No loan application or active lead found in CRM for this PAN");
+    const error = new Error("No loan application or active lead found for this PAN");
     error.statusCode = 404;
     throw error;
   }
@@ -632,7 +632,7 @@ const resolveRepaymentContactFromPan = async (pan) => {
   const mobile = normalizeMobile(crmStatus.phone || crmStatus.mobile);
 
   if (!/^[6-9]\d{9}$/.test(mobile)) {
-    throw createBadRequest("Registered mobile number is not available in CRM for this PAN");
+    throw createBadRequest("Registered mobile number is not available for this PAN");
   }
 
   return {
@@ -1299,7 +1299,7 @@ export const createRepaymentPaymentOrder = async (req, res, next) => {
     if (!effectiveCrmDetails) {
       return res.status(404).json({
         success: false,
-        message: "No active repayment found in CRM",
+        message: "No active repayment found",
       });
     }
 

@@ -401,7 +401,7 @@ const fetchCrmLeadStatusBySourceId = async (sourceId) => {
         return data.data || null;
       }
 
-      lastError = new Error(data.message || "Unable to fetch CRM status");
+      lastError = new Error(data.message || "Unable to fetch application status");
       lastError.statusCode = response.status;
     } catch (error) {
       lastError = error;
@@ -604,7 +604,7 @@ const fetchCrmLeadStatusesByMobile = async (mobile) => {
         return normalizeCrmStatusList(data.data);
       }
 
-      lastError = new Error(data.message || "Unable to fetch CRM status by mobile");
+      lastError = new Error(data.message || "Unable to fetch status by mobile");
       lastError.statusCode = response.status;
     } catch (error) {
       lastError = error;
@@ -1226,7 +1226,7 @@ export const downloadSanctionLetter = async (req, res) => {
       }
     }
 
-    return res.status(404).json({ message: "CRM sanction letter is not available" });
+    return res.status(404).json({ message: "Sanction letter is not available" });
   } catch (err) {
     return res.status(500).json({ error: getSafeErrorMessage(err) });
   }
