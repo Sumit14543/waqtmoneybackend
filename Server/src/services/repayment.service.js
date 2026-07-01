@@ -306,6 +306,7 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
     loan_amount: approvedLoanAmount || undefined,
     principal_amount: approvedLoanAmount || undefined,
     disbursed_amount: firstNumber(crmStatus.disbursement?.disbursedAmount, crmStatus.sanction?.disbursedAmount) || undefined,
+    disbursal_date: crmStatus.disbursement?.disbursedAt || crmStatus.disbursement?.disbursalDate || crmStatus.disbursement?.disbursementDate || crmStatus.sanction?.disbursedAt || "",
     maturity_amount: totalAmount || undefined,
     total_repayable_amount: totalAmount || undefined,
     outstanding_amount: balanceAmount,
