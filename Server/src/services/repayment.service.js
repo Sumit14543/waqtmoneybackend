@@ -293,11 +293,13 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
 
   const displayInterestRate = finalInterestRate ? (String(finalInterestRate).includes("%") ? String(finalInterestRate) : `${finalInterestRate}%`) : "";
   const repaymentStatus = repayment.status;
+  const dpdInterest = Math.max(0, Number((balanceAmount - totalAmount).toFixed(2)));
 
   return {
     application_id: applicationId,
     loan_id: loanId,
     full_name: crmStatus.customerName || "Customer",
+    dpd_interest: dpdInterest || undefined,
     mobile: normalizeMobile(crmStatus.phone),
     pan_number: crmStatus.pan || crmStatus.panNumber || "",
     requested_loan_amount: requestedLoanAmount || undefined,
