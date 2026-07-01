@@ -318,7 +318,11 @@ const firstPositiveNumber = (...values) => {
 
 const getCrmRepaymentOutstanding = (crmStatus = {}) => {
   const repayment = crmStatus.repayment || {};
+  const disbursement = crmStatus.disbursement || {};
   const directOutstanding = firstPositiveNumber(
+    disbursement.outstanding,
+    disbursement.outstandingAmount,
+    disbursement.outstanding_amount,
     repayment.balanceAmount,
     repayment.balance_amount,
     repayment.outstanding,
@@ -701,13 +705,14 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     loan.maturity_amount
   );
   const crmOutstandingAmount = firstPositiveNumber(
+    disbursement.outstanding,
+    disbursement.outstandingAmount,
+    disbursement.outstanding_amount,
     repayment.balanceAmount,
     repayment.balance_amount,
     repayment.outstanding,
     repayment.outstandingAmount,
     repayment.outstanding_amount,
-    disbursement.outstanding,
-    disbursement.outstandingAmount,
     repayment.nextPaymentAmount,
     repayment.next_payment_amount,
     getCrmRepaymentOutstanding(crmStatus || {}),

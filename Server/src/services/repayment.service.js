@@ -129,6 +129,9 @@ const normalizeRepaymentBlock = (repayment = {}) => {
           repayment.repayment_paid_amount
   );
   const balanceAmount = firstNumber(
+    repayment.disbursement?.outstanding,
+    repayment.disbursement?.outstandingAmount,
+    repayment.disbursement?.outstanding_amount,
     repayment.balanceAmount,
     repayment.balance_amount,
     repayment.outstanding,
