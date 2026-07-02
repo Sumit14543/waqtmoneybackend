@@ -79,17 +79,27 @@ export const createLoan = async (data) => {
     return result;
   }
 
+  const tempApplicationId = `TEMP-LN-${Date.now()}-${Math.floor(Math.random() * 90000 + 10000)}`;
+
   const [result] = await db.execute(
     `INSERT INTO ${APPLICATION_TABLE}
       (application_id, mobile, loan_amount, loan_purpose, has_running_loan, current_step, last_activity_at)
      VALUES (?, ?, ?, ?, ?, 'loan_requirement', NOW())`,
     [
-      `WAQTMN-LN-${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 90 + 10)}`,
+      tempApplicationId,
       data.phone || "",
       amount,
       purpose,
       hasLoan === "yes" || hasLoan === true ? 1 : 0,
     ]
+  );
+
+  const insertId = result.insertId;
+  const applicationId = `WAQTMN-LN-${String(insertId).padStart(6, "0")}`;
+
+  await db.execute(
+    `UPDATE ${APPLICATION_TABLE} SET application_id = ? WHERE id = ?`,
+    [applicationId, insertId]
   );
 
   return result;

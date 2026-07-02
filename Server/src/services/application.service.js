@@ -801,13 +801,21 @@ export const createApplication = async (data) => {
     throw badRequest("Invalid Phone");
   }
 
-  const applicationId = `WAQTMN-PD-${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 90 + 10)}`;
+  const tempApplicationId = `TEMP-PD-${Date.now()}-${Math.floor(Math.random() * 90000 + 10000)}`;
 
   const [result] = await db.execute(
     `INSERT INTO ${APPLICATION_TABLE}
       (application_id, loan_type, source, mobile, email, pan_number, uan_number, employment_status, monthly_income, current_step, lead_visible, submit_at, last_activity_at)
      VALUES (?, 'payday', 'waqtmoney', ?, ?, ?, ?, ?, ?, 'otp_pending', 0, NULL, NOW())`,
-    [applicationId, phone, email || null, pan || null, null, employment, salary]
+    [tempApplicationId, phone, email || null, pan || null, null, employment, salary]
+  );
+
+  const insertId = result.insertId;
+  const applicationId = `WAQTMN-PD-${String(insertId).padStart(6, "0")}`;
+
+  await db.execute(
+    `UPDATE ${APPLICATION_TABLE} SET application_id = ? WHERE id = ?`,
+    [applicationId, insertId]
   );
 
   let uanNumber = "";
