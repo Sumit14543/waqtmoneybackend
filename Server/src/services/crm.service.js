@@ -1,10 +1,12 @@
 import logger from "../utils/logger.js";
 import crypto from "crypto";
 import db from "../configs/db.js";
+import { getAppSecret } from "../configs/secrets.js";
 import {
   CRM_ACTIVE_APPLICATION_API_URLS,
   CRM_CREATE_LEAD_API_URLS,
 } from "../configs/integrations.js";
+
 
 const firstPresent = (...values) =>
   values.find((value) => value !== undefined && value !== null && value !== "");
@@ -21,7 +23,7 @@ const isActiveApplicationMessage = (value) =>
     String(value || "")
   );
 
-const decryptAadhaarNumber = (value) => {
+export const decryptAadhaarNumber = (value) => {
   const encrypted = String(value || "").trim();
   if (!encrypted) return "";
 
