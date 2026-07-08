@@ -245,14 +245,17 @@ const parsePanApiResponse = (data) => {
   };
 };
 
-const savePanVerification = async ({ applicationId, pan, fullName, dob, uanNumber }) => {
+const savePanVerification = async ({ applicationId, pan, fullName, dob, uanNumber, aadhaarMasked }) => {
   if (!applicationId) {
     const error = new Error("Application session not found. Please start application again.");
     error.statusCode = 400;
     throw error;
   }
 
-  await ensureApplicationColumns([["uan_number", "varchar(20) NULL"]]);
+  await ensureApplicationColumns([
+    ["uan_number", "varchar(20) NULL"],
+    ["pan_aadhaar_masked", "varchar(20) NULL"],
+  ]);
 
   const lookup = buildApplicationLookup(applicationId);
   const [result] = await db.execute(
@@ -261,10 +264,11 @@ const savePanVerification = async ({ applicationId, pan, fullName, dob, uanNumbe
          full_name = ?,
          dob = ?,
          uan_number = COALESCE(?, uan_number),
+         pan_aadhaar_masked = ?,
          current_step = 'pan_verify',
          last_activity_at = NOW()
      WHERE ${lookup.clause}`,
-    [pan, fullName, dob, uanNumber || null, ...lookup.values]
+    [pan, fullName, dob, uanNumber || null, aadhaarMasked || null, ...lookup.values]
   );
 
   if (result.affectedRows === 0) {
@@ -333,6 +337,7 @@ export const verifyPan = async (req, res) => {
         fullName: mockDetails.fullName,
         dob: mockDetails.dob,
         uanNumber: mockDetails.uanNumber,
+        aadhaarMasked: mockDetails.aadhaarMasked,
       });
 
       logger.warn("PAN API token missing. Using local mock PAN verification.", {
@@ -390,6 +395,7 @@ export const verifyPan = async (req, res) => {
           fullName: mockDetails.fullName,
           dob: mockDetails.dob,
           uanNumber: mockDetails.uanNumber,
+          aadhaarMasked: mockDetails.aadhaarMasked,
         });
 
         logger.warn("PAN API auth failed. Using local mock PAN verification.", {
@@ -472,6 +478,7 @@ export const verifyPan = async (req, res) => {
         fullName,
         dob,
         uanNumber,
+        aadhaarMasked,
       });
     }
 

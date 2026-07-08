@@ -80,6 +80,7 @@ const ensureApplicationColumns = async () => {
     ["aadhaar_reference_id", "VARCHAR(160) NULL"],
     ["lead_visible", "TINYINT(1) DEFAULT 0"],
     ["completed_at", "DATETIME NULL"],
+    ["pan_aadhaar_masked", "VARCHAR(20) NULL"],
   ];
 
   for (const [name, definition] of columns) {
@@ -329,6 +330,24 @@ const markAadhaarVerified = async (application, details = {}) => {
   return masked || application.aadhaar_masked || "";
 };
 
+const matchesAadhaarMask = (aadhaar, mask) => {
+  if (!mask || !aadhaar) return true;
+
+  const cleanMask = String(mask).replace(/\s/g, "");
+  const cleanAadhaar = String(aadhaar).replace(/\D/g, "");
+
+  if (cleanAadhaar.length !== 12 || cleanMask.length !== 12) return false;
+
+  for (let i = 0; i < 12; i++) {
+    const maskChar = cleanMask[i];
+    if (maskChar.toUpperCase() !== "X" && maskChar !== cleanAadhaar[i]) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 export const startReactAadhaarVerification = async (req, res, next) => {
   try {
     const applicationId = req.body.applicationId || req.body.id;
@@ -348,7 +367,7 @@ export const startReactAadhaarVerification = async (req, res, next) => {
     const encryptedAadhaar = encryptData(aadhaar);
     const lookup = buildApplicationLookup(applicationId);
     const [existingRows] = await db.execute(
-      `SELECT id, application_id, mobile, email, pan_number
+      `SELECT id, application_id, mobile, email, pan_number, pan_aadhaar_masked
        FROM ${APPLICATION_TABLE}
        WHERE ${lookup.clause}
        LIMIT 1`,
@@ -358,6 +377,10 @@ export const startReactAadhaarVerification = async (req, res, next) => {
 
     if (!application) {
       throw badRequest("Application not found");
+    }
+
+    if (application.pan_aadhaar_masked && !matchesAadhaarMask(aadhaar, application.pan_aadhaar_masked)) {
+      throw badRequest("Entered Aadhaar number does not match the Aadhaar linked with your PAN");
     }
 
     await checkActiveApplicationInCRM({
