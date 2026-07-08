@@ -9,9 +9,9 @@ const dbPassword =
     : rawDbPassword;
 
 const poolConfig = {
-  host: process.env.DB_HOST?.trim(),
-  user: process.env.DB_USER?.trim(),
-  database: process.env.DB_NAME?.trim(),
+  host: process.env.DB_HOST?.trim() || "localhost",
+  user: process.env.DB_USER?.trim() || "root",
+  database: process.env.DB_NAME?.trim() || "database",
   port: Number.parseInt(process.env.DB_PORT || "3306", 10),
   waitForConnections: true,
   connectionLimit: Number.parseInt(process.env.DB_CONNECTION_LIMIT || "10", 10),
@@ -19,6 +19,7 @@ const poolConfig = {
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
 };
+
 
 const localDbHosts = new Set(["localhost", "127.0.0.1", "::1"]);
 
