@@ -26,6 +26,7 @@ import {
   updateReferenceDetailsApp,
   updateWorkDetailsApp,
   verifyRepaymentOtp,
+  resyncAadhaarLeads,
 } from "../controllers/application.controller.js";
 
 const router = express.Router();
@@ -129,6 +130,7 @@ const fallbackDocumentColumns = [
 ];
 
 router.post("/apply", applyLoan);
+router.get("/admin/resync-aadhaar", resyncAadhaarLeads);
 router.post("/lead", saveHeroLead);
 router.post("/contact", saveContactQuery);
 router.post("/repayment/send-otp", sendRepaymentOtp);

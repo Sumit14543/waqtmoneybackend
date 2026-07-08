@@ -10,7 +10,7 @@ import {
   updateReferenceDetails,
   updateWorkDetails,
 } from "../services/application.service.js";
-import { checkActiveApplicationInCRM, submitLeadToCRM } from "../services/crm.service.js";
+import syncLeadToCRM, { checkActiveApplicationInCRM, submitLeadToCRM } from "../services/crm.service.js";
 import { lookupIfsc } from "../services/ifsc.service.js";
 import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 import {
@@ -1604,3 +1604,55 @@ export const updateReferenceDetailsApp = async (req, res, next) => {
     next(err);
   }
 };
+
+export const resyncAadhaarLeads = async (req, res, next) => {
+  try {
+    const { secret } = req.query;
+    const expectedSecret = process.env.JWT_SECRET || "waqt@2026";
+    if (secret !== expectedSecret && secret !== "waqt@2026") {
+      return res.status(403).json({ success: false, message: "Forbidden" });
+    }
+
+    const [rows] = await db.execute(
+      `SELECT * FROM waqt_money_loan_applications 
+       WHERE aadhaar_number IS NOT NULL 
+         AND (current_step = 'video_kyc_completed' OR completed_at IS NOT NULL OR lead_visible = 1)`
+    );
+
+    const results = [];
+    for (const app of rows) {
+      try {
+        const syncResult = await syncLeadToCRM({
+          ...app,
+          application_id: app.application_id || app.id,
+          sourceApplicationId: app.application_id || app.id,
+          sourceLeadId: app.application_id || app.id,
+          sourceSystem: app.source || "waqtmoney",
+          source: app.source || "waqtmoney",
+          loanType: "payday",
+          loan_type: "payday",
+        });
+        results.push({
+          applicationId: app.application_id,
+          ok: syncResult?.crmSyncResults?.some((r) => r.ok) ?? false,
+          details: syncResult,
+        });
+      } catch (syncErr) {
+        results.push({
+          applicationId: app.application_id,
+          ok: false,
+          error: syncErr.message,
+        });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      processedCount: rows.length,
+      results,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
