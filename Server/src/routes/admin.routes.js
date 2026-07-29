@@ -13,6 +13,7 @@ const router = express.Router();
 
 // Public login endpoint
 router.post("/login", adminLogin);
+router.post("/admin/login", adminLogin);
 
 // Protected endpoints
 router.get("/summary", verifyAdminToken, getAdminSummary);

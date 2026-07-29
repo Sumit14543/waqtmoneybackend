@@ -237,16 +237,16 @@ app.use(
   paymentLimiter,
 );
 
-app.use("/api/loan", loanRoutes);
-app.use("/api/application", applicationRoutes);
-app.use("/api/otp", otpRoutes);
-app.use("/api/auth", authRoutes);
-app.use("/api/pan", panRoutes);
-app.use("/api/aadhaar", aadhaarRoutes);
-app.use("/api/react-aadhaar", reactAadhaarRoutes);
-app.use("/api/location", locationRoutes);
-app.use("/api/admin", adminRoutes);
-app.use("/api/blogs", blogRoutes);
+app.use(["/api/loan", "/loan"], loanRoutes);
+app.use(["/api/application", "/application"], applicationRoutes);
+app.use(["/api/otp", "/otp"], otpRoutes);
+app.use(["/api/auth", "/auth"], authRoutes);
+app.use(["/api/pan", "/pan"], panRoutes);
+app.use(["/api/aadhaar", "/aadhaar"], aadhaarRoutes);
+app.use(["/api/react-aadhaar", "/react-aadhaar"], reactAadhaarRoutes);
+app.use(["/api/location", "/location"], locationRoutes);
+app.use(["/api/admin", "/admin"], adminRoutes);
+app.use(["/api/blogs", "/blogs", "/api/blog", "/blog"], blogRoutes);
 
 app.use(errorHandler);
 
