@@ -1,6 +1,7 @@
 import mysql from "mysql2/promise";
 import "./env.js";
 import logger from "../utils/logger.js";
+import { mockBlogsSeed } from "./mockBlogs.js";
 
 const rawDbPassword = process.env.DB_PASSWORD || process.env.DB_PASS || "";
 const dbPassword =
@@ -67,18 +68,336 @@ if (dbPassword !== undefined) {
   poolConfig.password = dbPassword;
 }
 
-const db = mysql.createPool(poolConfig);
+let db;
 
-(async () => {
-  try {
-    const connection = await db.getConnection();
-    logger.info(
-      `MySQL connection established: ${poolConfig.user}@${poolConfig.host}/${poolConfig.database}`,
-    );
-    connection.release();
-  } catch (error) {
-    logger.error("MySQL connection failed:", formatDbError(error));
-  }
-})();
+if (process.env.BYPASS_DB === "true") {
+  logger.warn("Database Bypass Mode is ACTIVE! Returning mock database handlers.");
+
+  const mockLeads = [
+    {
+      id: 1,
+      application_id: "WAQT-LEAD-001",
+      loan_type: "Personal",
+      mobile: "9876543210",
+      email: "rahul.sharma@example.com",
+      pan_number: "ABCDE1234F",
+      uan_number: "100987654321",
+      employment_status: "salaried",
+      monthly_income: "45000.00",
+      loan_amount: "150000.00",
+      loan_purpose: "Home renovation",
+      has_running_loan: 0,
+      full_name: "Rahul Sharma",
+      dob: "1990-05-15",
+      pincode: "110001",
+      city: "New Delhi",
+      company_name: "TCS",
+      designation: "Software Engineer",
+      office_email: "rahul.s@tcs.com",
+      salary_day: 5,
+      office_address: "Sector 62, Noida",
+      office_pincode: "201301",
+      education: "Graduate",
+      experience_years: 4,
+      bank_name: "HDFC Bank",
+      branch_name: "Connaught Place",
+      account_holder: "Rahul Sharma",
+      account_number: "50100123456789",
+      ifsc_code: "HDFC0000003",
+      reference1_name: "Vijay Sharma",
+      reference1_mobile: "9988776655",
+      reference1_relation: "Father",
+      reference2_name: "Alok Gupta",
+      reference2_mobile: "9876987698",
+      reference2_relation: "Friend",
+      selfie_photo: "selfie_mock_1.jpg",
+      salary_slip_current: "slip_mock_1.pdf",
+      video_kyc: "video_mock_1.mp4",
+      current_step: "work-details",
+      lead_visible: 1,
+      created_at: "2026-07-18T10:00:00Z"
+    },
+    {
+      id: 2,
+      application_id: "WAQT-LEAD-002",
+      loan_type: "Business",
+      mobile: "9123456789",
+      email: "priya.patel@example.com",
+      pan_number: "FGHJK5678L",
+      uan_number: "",
+      employment_status: "self-employed",
+      monthly_income: "85000.00",
+      loan_amount: "500000.00",
+      loan_purpose: "Working capital",
+      has_running_loan: 1,
+      full_name: "Priya Patel",
+      dob: "1988-11-20",
+      pincode: "400001",
+      city: "Mumbai",
+      company_name: "Patel Enterprises",
+      designation: "Proprietor",
+      office_email: "priya@patelent.com",
+      salary_day: 10,
+      office_address: "Andheri East, Mumbai",
+      office_pincode: "400069",
+      education: "Post Graduate",
+      experience_years: 8,
+      bank_name: "ICICI Bank",
+      branch_name: "Andheri Branch",
+      account_holder: "Priya Patel",
+      account_number: "000401234567",
+      ifsc_code: "ICIC0000004",
+      reference1_name: "Karan Patel",
+      reference1_mobile: "9111222333",
+      reference1_relation: "Spouse",
+      reference2_name: "Sonia Rao",
+      reference2_mobile: "9222333444",
+      reference2_relation: "Colleague",
+      selfie_photo: "selfie_mock_2.jpg",
+      salary_slip_current: "",
+      video_kyc: "",
+      current_step: "bank-details",
+      lead_visible: 1,
+      created_at: "2026-07-18T11:30:00Z"
+    },
+    {
+      id: 3,
+      application_id: "WAQT-LEAD-003",
+      loan_type: "Payday",
+      mobile: "8888877777",
+      email: "amit.verma@example.com",
+      pan_number: "ZCVBN9876Q",
+      uan_number: "100987654322",
+      employment_status: "salaried",
+      monthly_income: "25000.00",
+      loan_amount: "15000.00",
+      loan_purpose: "Emergency cash",
+      has_running_loan: 0,
+      full_name: "Amit Verma",
+      dob: "1995-02-28",
+      pincode: "560001",
+      city: "Bengaluru",
+      company_name: "Infosys",
+      designation: "Process Associate",
+      office_email: "amit.v@infosys.com",
+      salary_day: 30,
+      office_address: "Electronic City, Bengaluru",
+      office_pincode: "560100",
+      education: "Graduate",
+      experience_years: 2,
+      bank_name: "State Bank of India",
+      branch_name: "MG Road Branch",
+      account_holder: "Amit Verma",
+      account_number: "30123456789",
+      ifsc_code: "SBIN0000123",
+      reference1_name: "Ramesh Verma",
+      reference1_mobile: "9333444555",
+      reference1_relation: "Brother",
+      reference2_name: "Deepak Jha",
+      reference2_mobile: "9444555666",
+      reference2_relation: "Friend",
+      selfie_photo: "selfie_mock_3.jpg",
+      salary_slip_current: "slip_mock_3.pdf",
+      video_kyc: "video_mock_3.mp4",
+      current_step: "completed",
+      lead_visible: 1,
+      created_at: "2026-07-17T15:20:00Z"
+    }
+  ];
+
+  const mockContacts = [
+    {
+      id: 1,
+      full_name: "Rajesh Kumar",
+      mobile: "9988776655",
+      email: "rajesh.k@example.com",
+      message: "Having trouble during PAN card verification, it shows name mismatch. Please check my application.",
+      created_at: "2026-07-18T18:45:00Z"
+    },
+    {
+      id: 2,
+      full_name: "Deepa Shah",
+      mobile: "9876543212",
+      email: "deepa.shah@example.com",
+      message: "Can I pre-close my business loan after 3 months? Are there any prepayment penalty charges?",
+      created_at: "2026-07-18T14:12:00Z"
+    },
+    {
+      id: 3,
+      full_name: "Vikas Singh",
+      mobile: "9123456780",
+      email: "vikas.singh@example.com",
+      message: "Is there any processing fee for the medical emergency loan? Please contact me as soon as possible.",
+      created_at: "2026-07-17T09:30:00Z"
+    }
+  ];
+
+  const mockBlogs = mockBlogsSeed.map((b, idx) => ({ id: idx + 1, ...b }));
+
+  db = {
+    async query(sql, params = []) {
+      const normalizedSql = sql.toUpperCase();
+      
+      // BLOG CRUD
+      if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_BLOGS WHERE SLUG = ?")) {
+        const slug = params[0];
+        const blog = mockBlogs.find(b => b.slug === slug);
+        return [blog ? [blog] : []];
+      }
+      if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_BLOGS")) {
+        return [mockBlogs];
+      }
+      if (normalizedSql.includes("INSERT INTO WAQT_MONEY_BLOGS")) {
+        // [slug, title, excerpt, content, image, author, category]
+        const newBlog = {
+          id: mockBlogs.length > 0 ? Math.max(...mockBlogs.map(b => b.id)) + 1 : 1,
+          slug: params[0],
+          title: params[1],
+          excerpt: params[2],
+          content: params[3],
+          image: params[4] || "/placeholder.svg",
+          author: params[5] || "Waqt Financial Expert",
+          category: params[6] || "Finance",
+          created_at: new Date().toISOString()
+        };
+        mockBlogs.push(newBlog);
+        return [{ affectedRows: 1, insertId: newBlog.id }];
+      }
+      if (normalizedSql.includes("UPDATE WAQT_MONEY_BLOGS SET")) {
+        // title = ?, slug = ?, category = ?, author = ?, excerpt = ?, content = ?, image = ? WHERE id = ?
+        const id = parseInt(params[params.length - 1], 10);
+        const idx = mockBlogs.findIndex(b => b.id === id);
+        if (idx !== -1) {
+          mockBlogs[idx].title = params[0];
+          mockBlogs[idx].slug = params[1];
+          mockBlogs[idx].category = params[2];
+          mockBlogs[idx].author = params[3];
+          mockBlogs[idx].excerpt = params[4];
+          mockBlogs[idx].content = params[5];
+          if (params[6] !== undefined) mockBlogs[idx].image = params[6];
+        }
+        return [{ affectedRows: 1 }];
+      }
+      if (normalizedSql.includes("DELETE FROM WAQT_MONEY_BLOGS WHERE ID = ?")) {
+        const id = parseInt(params[0], 10);
+        const idx = mockBlogs.findIndex(b => b.id === id);
+        if (idx !== -1) {
+          mockBlogs.splice(idx, 1);
+        }
+        return [{ affectedRows: 1 }];
+      }
+
+      // LEADS & QUERIES CRUD
+      if (normalizedSql.includes("SELECT COUNT(*) AS TOTAL FROM WAQT_MONEY_BLOGS")) {
+        return [[ { total: mockBlogs.length } ]];
+      }
+      if (normalizedSql.includes("SELECT COUNT(*) AS TOTAL FROM WAQT_MONEY_LOAN_APPLICATIONS")) {
+        return [[ { total: 9954 } ]];
+      }
+      if (normalizedSql.includes("SELECT COUNT(*) AS TOTAL FROM WAQT_MONEY_HERO_LEADS")) {
+        return [[ { total: 328 } ]];
+      }
+      if (normalizedSql.includes("SELECT COUNT(*) AS TOTAL FROM WAQT_MONEY_CONTACT_QUERIES")) {
+        return [[ { total: 143 } ]];
+      }
+      if (normalizedSql.includes("GROUP BY LOAN_TYPE")) {
+        return [[
+          { loan_type: "Personal", count: 4820 },
+          { loan_type: "Business", count: 2410 },
+          { loan_type: "Payday", count: 1540 },
+          { loan_type: "Property", count: 684 },
+          { loan_type: "Vehicle", count: 300 },
+          { loan_type: "Medical", count: 200 }
+        ]];
+      }
+      if (normalizedSql.includes("ORDER BY CREATED_AT DESC LIMIT 5")) {
+        return [mockLeads.slice(0, 5)];
+      }
+      if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_LOAN_APPLICATIONS WHERE APPLICATION_ID = ?")) {
+        const id = params[0];
+        const lead = mockLeads.find(l => l.application_id === id);
+        return [lead ? [lead] : []];
+      }
+      if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_LOAN_APPLICATIONS")) {
+        let filtered = [...mockLeads];
+        if (params.length > 0 && typeof params[0] === "string" && params[0].startsWith("%") && params[0].endsWith("%")) {
+          const searchVal = params[0].replace(/%/g, "").toLowerCase();
+          filtered = filtered.filter(l => 
+            l.mobile.includes(searchVal) || 
+            (l.pan_number && l.pan_number.toLowerCase().includes(searchVal)) || 
+            (l.email && l.email.toLowerCase().includes(searchVal)) ||
+            (l.full_name && l.full_name.toLowerCase().includes(searchVal))
+          );
+        }
+        return [filtered];
+      }
+      if (normalizedSql.includes("UPDATE WAQT_MONEY_LOAN_APPLICATIONS SET")) {
+        const id = params[params.length - 1];
+        const lead = mockLeads.find(l => l.application_id === id);
+        if (lead) {
+          if (sql.includes("current_step = ?")) {
+            lead.current_step = params[0];
+          }
+          if (sql.includes("lead_visible = ?")) {
+            lead.lead_visible = params[sql.includes("current_step") ? 1 : 0] ? 1 : 0;
+          }
+        }
+        return [{ affectedRows: 1 }];
+      }
+      if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_CONTACT_QUERIES")) {
+        return [mockContacts];
+      }
+      return [[]];
+    },
+    async execute(sql, params = []) {
+      return this.query(sql, params);
+    },
+    async getConnection() {
+      return {
+        release() {}
+      };
+    }
+  };
+} else {
+  db = mysql.createPool(poolConfig);
+  (async () => {
+    try {
+      const connection = await db.getConnection();
+      logger.info(
+        `MySQL connection established: ${poolConfig.user}@${poolConfig.host}/${poolConfig.database}`,
+      );
+
+      // Create blogs table
+      await connection.execute(`
+        CREATE TABLE IF NOT EXISTS waqt_money_blogs (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          slug VARCHAR(120) NOT NULL UNIQUE,
+          title VARCHAR(255) NOT NULL,
+          excerpt TEXT NOT NULL,
+          content LONGTEXT NOT NULL,
+          image VARCHAR(255) NULL,
+          author VARCHAR(100) DEFAULT 'Waqt Financial Expert',
+          category VARCHAR(100) DEFAULT 'Finance',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Always ensure blogs are updated with latest realistic content
+      await connection.execute("DELETE FROM waqt_money_blogs");
+      logger.info("Seeding default financial articles into waqt_money_blogs table...");
+      for (const blog of mockBlogsSeed) {
+        await connection.execute(
+          "INSERT INTO waqt_money_blogs (slug, title, excerpt, content, image, author, category) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [blog.slug, blog.title, blog.excerpt, blog.content, blog.image, blog.author, blog.category]
+        );
+      }
+      logger.info("Seeding complete!");
+
+      connection.release();
+    } catch (error) {
+      logger.error("MySQL connection failed:", formatDbError(error));
+    }
+  })();
+}
 
 export default db;

@@ -569,6 +569,82 @@ const syncLeadToCRM = async (leadData) => {
 
 
 
+const checkActiveApplicationInDatabase = async (leadData) => {
+  try {
+    const currentAppId = String(leadData.id || leadData.applicationId || leadData.application_id || "").trim();
+    const rawMobile = phone10(leadData.phone || leadData.mobile || leadData.phone_number);
+    const rawPan = String(leadData.pan || leadData.panNumber || leadData.pan_number || "").trim().toUpperCase();
+    const rawAadhaar = onlyDigits(leadData.aadhaarNumber || leadData.aadhaar_number || leadData.aadharNumber || leadData.aadhar_number);
+
+    if (!rawMobile && !rawPan && !rawAadhaar) return false;
+
+    const APPLICATION_TABLE = process.env.APPLICATION_TABLE || "applications";
+
+    const conditions = [];
+    const params = [];
+
+    if (rawMobile) {
+      conditions.push(`(mobile = ? OR mobile = ? OR mobile = ?)`);
+      params.push(rawMobile, `91${rawMobile}`, `+91${rawMobile}`);
+    }
+
+    if (rawPan && /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(rawPan)) {
+      conditions.push(`pan_number = ?`);
+      params.push(rawPan);
+    }
+
+    if (conditions.length > 0) {
+      let query = `SELECT id, application_id, mobile, pan_number, current_step
+                   FROM ${APPLICATION_TABLE}
+                   WHERE (${conditions.join(" OR ")})`;
+
+      if (currentAppId) {
+        query += ` AND application_id <> ? AND id <> ?`;
+        params.push(currentAppId, currentAppId);
+      }
+
+      const [rows] = await db.query(query, params);
+
+      if (rows.length > 0) {
+        for (const row of rows) {
+          const step = String(row.current_step || "").toLowerCase();
+          if (step !== "rejected" && step !== "closed" && step !== "expired") {
+            return true;
+          }
+        }
+      }
+    }
+
+    if (rawAadhaar && rawAadhaar.length === 12) {
+      let aadhaarQuery = `SELECT id, application_id, aadhaar_number, current_step
+                          FROM ${APPLICATION_TABLE}
+                          WHERE aadhaar_number IS NOT NULL AND aadhaar_number <> ''`;
+      const aadhaarParams = [];
+
+      if (currentAppId) {
+        aadhaarQuery += ` AND application_id <> ? AND id <> ?`;
+        aadhaarParams.push(currentAppId, currentAppId);
+      }
+
+      const [aadhaarRows] = await db.query(aadhaarQuery, aadhaarParams);
+
+      for (const row of aadhaarRows) {
+        const step = String(row.current_step || "").toLowerCase();
+        if (step !== "rejected" && step !== "closed" && step !== "expired") {
+          const decrypted = decryptAadhaarNumber(row.aadhaar_number);
+          if (decrypted === rawAadhaar) {
+            return true;
+          }
+        }
+      }
+    }
+  } catch (dbError) {
+    logger.error("Local DB active application check error:", dbError.message);
+  }
+
+  return false;
+};
+
 export const checkActiveApplicationInCRM = async (leadData) => {
   const duplicateCheckBypassEnabled =
     process.env.BYPASS_DUPLICATE_CHECK === "true" &&
@@ -580,9 +656,18 @@ export const checkActiveApplicationInCRM = async (leadData) => {
     return { exists: false };
   }
 
-  // Pure CRM Duplicity Flow: The CRM is the single source of truth for all loan duplicity.
-  // We query the CRM API directly to get the live status, ensuring that repeat customers
-  // are allowed to apply once their previous CRM record is closed or inactive.
+  // 1. Local Database Duplicity Check (Mobile, PAN, Aadhaar)
+  const existsInLocalDb = await checkActiveApplicationInDatabase(leadData);
+  if (existsInLocalDb) {
+    logger.warn("Active application found in local database for leadData:", {
+      phone: leadData.phone || leadData.mobile,
+      hasPan: Boolean(leadData.pan),
+      hasAadhaar: Boolean(leadData.aadhaarNumber),
+    });
+    throw createActiveApplicationError({ reason: "Duplicate active application in database" });
+  }
+
+  // 2. CRM Duplicity Check
   try {
     const results = [];
 

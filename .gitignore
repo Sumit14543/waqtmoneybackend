@@ -16,6 +16,9 @@ Server/dist/
 .vite/
 Server/.vite/
 Server - Copy/
+Server_extracted/
+Server.zip
+frontend.zip
 
 
 # Environment files and secrets

@@ -10,6 +10,7 @@ import authRoutes from "./routes/auth.routes.js";
 import panRoutes from "./routes/pan.route.js";
 import aadhaarRoutes from "./routes/aadhaar.routes.js";
 import reactAadhaarRoutes from "./routes/reactAadhaar.routes.js";
+import locationRoutes from "./routes/location.routes.js";
 import {
   LOCAL_WEB_ORIGINS,
   PRODUCTION_WEB_ORIGINS,
@@ -166,7 +167,7 @@ app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  res.setHeader("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(self), payment=()");
   res.setHeader("Cross-Origin-Resource-Policy", isProduction ? "same-site" : "cross-origin");
   res.setHeader("Cache-Control", "no-store");
 
@@ -213,7 +214,6 @@ app.use(
   [
     "/api/application/repayment/send-otp",
     "/api/application/repayment/verify-otp",
-    "/api/application/repayment/details",
     "/api/otp/send-otp",
     "/api/otp/verify-otp",
     "/api/auth/signup",
@@ -242,6 +242,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/pan", panRoutes);
 app.use("/api/aadhaar", aadhaarRoutes);
 app.use("/api/react-aadhaar", reactAadhaarRoutes);
+app.use("/api/location", locationRoutes);
 
 app.use(errorHandler);
 

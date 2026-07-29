@@ -87,6 +87,10 @@ jobs:
             --exclude=.env.* \
             --exclude=cache \
             --exclude=uploads \
+            --exclude=uploads/ \
+            --exclude=uploads/** \
+            --exclude=/uploads \
+            --exclude=/uploads/** \
             --exclude=app.log \
             --exclude=app.pid \
             --exclude=tmp \

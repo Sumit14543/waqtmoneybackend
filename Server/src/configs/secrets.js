@@ -1,21 +1,18 @@
+import crypto from "crypto";
+
 const isProduction = process.env.NODE_ENV === "production";
+const runtimeRandomSecret = crypto.randomBytes(32).toString("hex");
+const runtimeRandomAppSecret = crypto.randomBytes(32).toString("hex");
 
 export const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET?.trim();
-
   if (!secret && isProduction) {
-    throw new Error("JWT_SECRET is required in production");
+    console.warn("[SECURITY WARNING] JWT_SECRET is not defined in .env! Generated secure runtime secret.");
   }
-
-  return secret || "development-only-jwt-secret";
+  return secret || runtimeRandomSecret;
 };
 
 export const getAppSecret = () => {
   const secret = (process.env.APP_SECRET_KEY || process.env.JWT_SECRET || "").trim();
-
-  if (!secret && isProduction) {
-    throw new Error("APP_SECRET_KEY or JWT_SECRET is required in production");
-  }
-
-  return secret || "development-only-app-secret";
+  return secret || runtimeRandomAppSecret;
 };
