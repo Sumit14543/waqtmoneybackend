@@ -11,6 +11,8 @@ import panRoutes from "./routes/pan.route.js";
 import aadhaarRoutes from "./routes/aadhaar.routes.js";
 import reactAadhaarRoutes from "./routes/reactAadhaar.routes.js";
 import locationRoutes from "./routes/location.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
+import blogRoutes from "./routes/blog.routes.js";
 import {
   LOCAL_WEB_ORIGINS,
   PRODUCTION_WEB_ORIGINS,
@@ -243,6 +245,8 @@ app.use("/api/pan", panRoutes);
 app.use("/api/aadhaar", aadhaarRoutes);
 app.use("/api/react-aadhaar", reactAadhaarRoutes);
 app.use("/api/location", locationRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/blogs", blogRoutes);
 
 app.use(errorHandler);
 
