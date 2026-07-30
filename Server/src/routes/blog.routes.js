@@ -49,6 +49,13 @@ router.get("/", getBlogs);
 router.get("/:slug", getBlogBySlug);
 
 // Protected admin routes
+router.post("/upload-inline-image", verifyAdminToken, upload.single("image"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: "No image file uploaded" });
+  }
+  const imageUrl = `/uploads/${req.file.filename}`;
+  return res.status(200).json({ success: true, url: imageUrl, message: "Image uploaded successfully" });
+});
 router.post("/", verifyAdminToken, upload.single("image"), createBlog);
 router.put("/:id", verifyAdminToken, upload.single("image"), updateBlog);
 router.delete("/:id", verifyAdminToken, deleteBlog);
