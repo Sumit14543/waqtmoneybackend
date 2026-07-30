@@ -656,7 +656,8 @@ export const checkActiveApplicationInCRM = async (leadData) => {
     return { exists: false };
   }
 
-  // 1. Local Database Duplicity Check (Mobile, PAN, Aadhaar)
+  // Rely on CRM API for active application verification so local DB drafts do not block CRM lead submission
+  /*
   const existsInLocalDb = await checkActiveApplicationInDatabase(leadData);
   if (existsInLocalDb) {
     logger.warn("Active application found in local database for leadData:", {
@@ -666,8 +667,9 @@ export const checkActiveApplicationInCRM = async (leadData) => {
     });
     throw createActiveApplicationError({ reason: "Duplicate active application in database" });
   }
+  */
 
-  // 2. CRM Duplicity Check
+  // CRM Duplicity Check
   try {
     const results = [];
 
