@@ -202,22 +202,26 @@ export const updateApp = async (req, res, next) => {
         throw error;
       }
 
-      const crmSync = await submitLeadToCRM({
-        ...application,
-        ...data,
-        application_id: application.application_id || id,
-        sourceApplicationId: application.application_id || id,
-        sourceLeadId: application.application_id || id,
-        sourceSystem: application.source || "waqtmoney",
-        source: application.source || "waqtmoney",
-        loanType: "payday",
-        loan_type: "payday",
-      });
+      try {
+        const crmSync = await submitLeadToCRM({
+          ...application,
+          ...data,
+          application_id: application.application_id || id,
+          sourceApplicationId: application.application_id || id,
+          sourceLeadId: application.application_id || id,
+          sourceSystem: application.source || "waqtmoney",
+          source: application.source || "waqtmoney",
+          loanType: "payday",
+          loan_type: "payday",
+        });
 
-      logger.info("CRM lead submitted before final application completion:", {
-        applicationId: application.application_id || id,
-        results: crmSync.crmSyncResults,
-      });
+        logger.info("CRM lead submitted before final application completion:", {
+          applicationId: application.application_id || id,
+          results: crmSync?.crmSyncResults,
+        });
+      } catch (crmErr) {
+        logger.warn("CRM submission warning during video_kyc_completed (proceeding anyway):", crmErr?.message || crmErr);
+      }
     }
 
     await updateApplication(id, data);
