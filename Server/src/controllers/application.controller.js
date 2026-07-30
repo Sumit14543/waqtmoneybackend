@@ -224,7 +224,15 @@ export const updateApp = async (req, res, next) => {
       }
     }
 
-    await updateApplication(id, data);
+    try {
+      await updateApplication(id, data);
+    } catch (updateErr) {
+      if (data.current_step === "video_kyc_completed") {
+        logger.warn("Non-fatal updateApplication warning during video_kyc_completed:", updateErr?.message || updateErr);
+      } else {
+        throw updateErr;
+      }
+    }
 
     if (id && process.env.UAN_LOOKUP_BACKGROUND_ON_UPDATE === "true") {
       setTimeout(() => getApplicationUanById(id).catch((error) => {

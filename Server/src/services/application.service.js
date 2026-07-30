@@ -372,8 +372,17 @@ export const updateApplication = async (id, data) => {
 
   if (data.current_step === "video_kyc_completed") {
     data.lead_visible = 1;
-    data.completed_at = data.completed_at || new Date();
-    data.submit_at = data.submit_at || new Date();
+    const nowStr = new Date().toISOString().slice(0, 19).replace("T", " ");
+    data.completed_at = data.completed_at
+      ? typeof data.completed_at === "string"
+        ? data.completed_at.slice(0, 19).replace("T", " ")
+        : nowStr
+      : nowStr;
+    data.submit_at = data.submit_at
+      ? typeof data.submit_at === "string"
+        ? data.submit_at.slice(0, 19).replace("T", " ")
+        : nowStr
+      : nowStr;
   }
 
   if (Object.prototype.hasOwnProperty.call(data, "submit_at")) {
