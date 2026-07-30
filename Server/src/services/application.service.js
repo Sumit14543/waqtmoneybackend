@@ -1,6 +1,7 @@
 import db from "../configs/db.js";
 import mysql from "mysql2/promise";
 import { fetchUanByMobile } from "./uan.service.js";
+import { processAndSaveLocation } from "./location.service.js";
 import logger from "../utils/logger.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
@@ -828,6 +829,21 @@ export const createApplication = async (data) => {
     setTimeout(() => getApplicationUanById(applicationId).catch((error) => {
       logger.error("Background UAN lookup error:", error.message);
     }), 0);
+  }
+
+  if (data.latitude !== undefined || data.longitude !== undefined || data.locationPermission || data.location_permission) {
+    processAndSaveLocation({
+      applicationId,
+      latitude: data.latitude,
+      longitude: data.longitude,
+      accuracy: data.accuracy,
+      capturedAt: data.capturedAt,
+      locationPermission: data.locationPermission || data.location_permission,
+      deviceType: data.deviceType,
+      browser: data.browser,
+      operatingSystem: data.operatingSystem,
+      userAgent: data.userAgent,
+    }).catch((err) => logger.warn("Background location save during application creation failed:", err.message));
   }
 
   return {
