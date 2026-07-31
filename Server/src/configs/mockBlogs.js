@@ -86,7 +86,7 @@ A: A single loan application generates one "hard inquiry" on your credit report,
 
 **Q5: Can I get a personal loan if I am self-employed?**  
 A: Yes. Self-employed individuals, business owners, and freelancers can qualify by providing 2 years of Income Tax Returns (ITR), audited Profit & Loss statements, and 12-month current bank account statements.`,
-    image: "/blog/blog-1-personal-loan-guide.webp",
+    image: "/blog-assets/blog-1-personal-loan-guide.webp",
     author: "Waqt Money Team",
     category: "Personal Loan",
     readTime: "10 Min Read",
@@ -166,7 +166,7 @@ A: On a ₹30,000 net monthly salary with zero existing debt (0% FOIR), you can 
 
 **Q5: What documents are required for instant salary verification?**  
 A: Most digital platforms require your PAN Card, Aadhaar Card (linked to mobile for OTP), latest 3-month salary slips, and 6-month PDF bank statement downloaded from net banking.`,
-    image: "/blog/blog-2-cibil-score-approval.webp",
+    image: "/blog-assets/blog-2-cibil-score-approval.webp",
     author: "Waqt Money Team",
     category: "Personal Loan",
     readTime: "9 Min Read",
@@ -250,7 +250,7 @@ A: Unsecured business loans typically offer tenures ranging from **12 months to 
 
 **Q5: Can new startups with less than 1 year of operation get a business loan?**  
 A: Early-stage startups under 1 year can explore MUDRA Shishu loans, government startup seed funding schemes, or unsecured credit lines backed by personal collateral or co-applicants.`,
-    image: "/blog/blog-3-small-business-owner.webp",
+    image: "/blog-assets/blog-3-small-business-owner.webp",
     author: "Waqt Money Team",
     category: "Business Loan",
     readTime: "11 Min Read",
@@ -327,7 +327,7 @@ A: Under recourse invoice discounting, if your client fails to pay the invoice w
 
 **Q5: Is collateral mandatory for a working capital line?**  
 A: No. Unsecured working capital lines up to ₹50 Lakhs are sanctioned based on bank current account turnover and GST filings without requiring collateral.`,
-    image: "/blog/blog-4-working-capital-factory.webp",
+    image: "/blog-assets/blog-4-working-capital-factory.webp",
     author: "Waqt Money Team",
     category: "Business Loan",
     readTime: "10 Min Read",
@@ -416,7 +416,7 @@ A: No! Payday loans are 100% unsecured. No property, gold, or guarantor pledge i
 
 **Q5: What documents do I need to apply for a payday loan?**  
 A: All you need is your PAN Card, Aadhaar Card (linked to mobile for OTP), latest salary slip, and 3-month bank statement showing your salary credits.`,
-    image: "/blog/blog-5-payday-cash-advance.webp",
+    image: "/blog-assets/blog-5-payday-cash-advance.webp",
     author: "Waqt Money Team",
     category: "Payday Loan",
     readTime: "9 Min Read",
@@ -489,7 +489,7 @@ A: Payday loan underwriting relies primarily on your monthly salary stability an
 
 **Q5: Is Waqt Money a licensed lender?**  
 A: Yes! Waqt Money facilitates loans through its licensed RBI-registered NBFC partner **Waqt Finance Pvt Ltd**, ensuring strict compliance with RBI digital lending guidelines.`,
-    image: "/blog/blog-6-emergency-salary-loan.webp",
+    image: "/blog-assets/blog-6-emergency-salary-loan.webp",
     author: "Waqt Money Team",
     category: "Payday Loan",
     readTime: "8 Min Read",
@@ -553,7 +553,7 @@ A: Basic KYC (PAN Card & Aadhaar Card), salary slip or income proof, and 3 to 6 
 
 **Q5: How fast will I receive the money in my bank account?**  
 A: Once your digital loan agreement is signed via e-sign OTP, funds are disbursed via IMPS within 30 minutes to 2 hours.`,
-    image: "/blog/blog-7-short-term-emergency.webp",
+    image: "/blog-assets/blog-7-short-term-emergency.webp",
     author: "Waqt Money Team",
     category: "Short Term Loan",
     readTime: "8 Min Read",
@@ -617,7 +617,7 @@ A: No! Modern digital lenders like Waqt Money charge zero foreclosure fees if yo
 
 **Q5: How do I apply for a salary advance on Waqt Money?**  
 A: Simply select your amount on the **Waqt Money** portal, complete Aadhaar e-KYC, upload your salary bank statement, and receive instant IMPS disbursal.`,
-    image: "/blog/blog-8-salary-advance-credit.webp",
+    image: "/blog-assets/blog-8-salary-advance-credit.webp",
     author: "Waqt Money Team",
     category: "Short Term Loan",
     readTime: "9 Min Read",

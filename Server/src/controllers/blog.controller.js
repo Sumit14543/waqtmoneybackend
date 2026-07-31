@@ -10,7 +10,7 @@ export const getBlogs = async (req, res) => {
     );
     const cleanedBlogs = blogs.map((b) => ({
       ...b,
-      image: b.image ? b.image : "/blog/blog-1-personal-loan-guide.webp"
+      image: b.image ? b.image : "/blog-assets/blog-1-personal-loan-guide.webp"
     }));
     return res.status(200).json({
       success: true,
@@ -45,7 +45,7 @@ export const getBlogBySlug = async (req, res) => {
 
     const blog = {
       ...rows[0],
-      image: rows[0].image ? rows[0].image : "/blog/blog-1-personal-loan-guide.webp"
+      image: rows[0].image ? rows[0].image : "/blog-assets/blog-1-personal-loan-guide.webp"
     };
 
     return res.status(200).json({
@@ -77,7 +77,7 @@ export const createBlog = async (req, res) => {
     }
 
     const cleanSlug = slug.toLowerCase().trim().replace(/[^a-z0-9-]/g, "-");
-    const image = req.file ? `/uploads/${req.file.filename}` : "/blog/blog-1-personal-loan-guide.webp";
+    const image = req.file ? `/uploads/${req.file.filename}` : "/blog-assets/blog-1-personal-loan-guide.webp";
     const blogStatus = status || "ACTIVE";
     const read = readTime || `${Math.max(1, Math.ceil(content.split(/\s+/).length / 200))} Min Read`;
 
