@@ -180,7 +180,7 @@ export const updateBlog = async (req, res) => {
       );
 
       if (rows.length > 0) {
-        const fields = ["title = ?", "slug = ?", "category = ?", "author = ?", "excerpt = ?", "content = ?"];
+        const fields = ["title = ?", "slug = ?", "category = ?", "author = ?", "excerpt = ?", "content = ?", "status = ?"];
         const params = [
           title || rows[0].title,
           cleanSlug || rows[0].slug,
@@ -188,6 +188,7 @@ export const updateBlog = async (req, res) => {
           author || rows[0].author,
           excerpt || rows[0].excerpt,
           content || rows[0].content,
+          status || rows[0].status || "ACTIVE",
         ];
 
         if (image !== undefined) {
