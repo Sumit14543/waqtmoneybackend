@@ -227,6 +227,11 @@ if (process.env.BYPASS_DB === "true") {
       full_name: "Vikas Singh",
       mobile: "9123456780",
       email: "vikas.singh@example.com",
+      message: "Is there any processing fee for the medical emergency loan? Please contact me as soon as possible.",
+      created_at: "2026-07-17T09:30:00Z"
+    }
+  ];
+
   const mockBlogs = mockBlogsSeed.map((b, idx) => ({ id: idx + 1, status: "ACTIVE", ...b }));
 
   db = {
