@@ -227,54 +227,58 @@ if (process.env.BYPASS_DB === "true") {
       full_name: "Vikas Singh",
       mobile: "9123456780",
       email: "vikas.singh@example.com",
-      message: "Is there any processing fee for the medical emergency loan? Please contact me as soon as possible.",
-      created_at: "2026-07-17T09:30:00Z"
-    }
-  ];
-
-  const mockBlogs = mockBlogsSeed.map((b, idx) => ({ id: idx + 1, ...b }));
+  const mockBlogs = mockBlogsSeed.map((b, idx) => ({ id: idx + 1, status: "ACTIVE", ...b }));
 
   db = {
     async query(sql, params = []) {
       const normalizedSql = sql.toUpperCase();
       
       // BLOG CRUD
-      if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_BLOGS WHERE SLUG = ?")) {
-        const slug = params[0];
-        const blog = mockBlogs.find(b => b.slug === slug);
+      if (normalizedSql.includes("WHERE SLUG = ? OR ID = ?") || normalizedSql.includes("WHERE SLUG = ?")) {
+        const key = params[0];
+        const key2 = params[1];
+        const blog = mockBlogs.find(b => b.slug === key || String(b.id) === String(key) || String(b.id) === String(key2));
+        return [blog ? [blog] : []];
+      }
+      if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_BLOGS WHERE ID = ?")) {
+        const id = params[0];
+        const blog = mockBlogs.find(b => String(b.id) === String(id));
         return [blog ? [blog] : []];
       }
       if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_BLOGS")) {
         return [mockBlogs];
       }
       if (normalizedSql.includes("INSERT INTO WAQT_MONEY_BLOGS")) {
-        // [slug, title, excerpt, content, image, author, category]
+        // [slug, title, excerpt, content, image, author, category, status, read_time]
         const newBlog = {
           id: mockBlogs.length > 0 ? Math.max(...mockBlogs.map(b => b.id)) + 1 : 1,
           slug: params[0],
           title: params[1],
           excerpt: params[2],
           content: params[3],
-          image: params[4] || "/placeholder.svg",
+          image: params[4] || "/blog-assets/blog-1-personal-loan-guide.webp",
           author: params[5] || "Waqt Financial Expert",
           category: params[6] || "Finance",
+          status: params[7] || "ACTIVE",
+          read_time: params[8] || "5 Min Read",
           created_at: new Date().toISOString()
         };
-        mockBlogs.push(newBlog);
+        mockBlogs.unshift(newBlog);
         return [{ affectedRows: 1, insertId: newBlog.id }];
       }
       if (normalizedSql.includes("UPDATE WAQT_MONEY_BLOGS SET")) {
-        // title = ?, slug = ?, category = ?, author = ?, excerpt = ?, content = ?, image = ? WHERE id = ?
         const id = parseInt(params[params.length - 1], 10);
         const idx = mockBlogs.findIndex(b => b.id === id);
         if (idx !== -1) {
-          mockBlogs[idx].title = params[0];
-          mockBlogs[idx].slug = params[1];
-          mockBlogs[idx].category = params[2];
-          mockBlogs[idx].author = params[3];
-          mockBlogs[idx].excerpt = params[4];
-          mockBlogs[idx].content = params[5];
-          if (params[6] !== undefined) mockBlogs[idx].image = params[6];
+          mockBlogs[idx].title = params[0] || mockBlogs[idx].title;
+          mockBlogs[idx].slug = params[1] || mockBlogs[idx].slug;
+          mockBlogs[idx].category = params[2] || mockBlogs[idx].category;
+          mockBlogs[idx].author = params[3] || mockBlogs[idx].author;
+          mockBlogs[idx].excerpt = params[4] || mockBlogs[idx].excerpt;
+          mockBlogs[idx].content = params[5] || mockBlogs[idx].content;
+          if (params[6] !== undefined) mockBlogs[idx].status = params[6];
+          if (params[7] !== undefined) mockBlogs[idx].read_time = params[7];
+          if (params[8] !== undefined) mockBlogs[idx].image = params[8];
         }
         return [{ affectedRows: 1 }];
       }
@@ -298,55 +302,22 @@ if (process.env.BYPASS_DB === "true") {
         return [[ { total: 328 } ]];
       }
       if (normalizedSql.includes("SELECT COUNT(*) AS TOTAL FROM WAQT_MONEY_CONTACT_QUERIES")) {
-        return [[ { total: 143 } ]];
+        return [[ { total: 142 } ]];
       }
-      if (normalizedSql.includes("GROUP BY LOAN_TYPE")) {
-        return [[
-          { loan_type: "Personal", count: 4820 },
-          { loan_type: "Business", count: 2410 },
-          { loan_type: "Payday", count: 1540 },
-          { loan_type: "Property", count: 684 },
-          { loan_type: "Vehicle", count: 300 },
-          { loan_type: "Medical", count: 200 }
-        ]];
-      }
-      if (normalizedSql.includes("ORDER BY CREATED_AT DESC LIMIT 5")) {
-        return [mockLeads.slice(0, 5)];
-      }
-      if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_LOAN_APPLICATIONS WHERE APPLICATION_ID = ?")) {
-        const id = params[0];
-        const lead = mockLeads.find(l => l.application_id === id);
-        return [lead ? [lead] : []];
+      if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_LOAN_APPLICATIONS WHERE ID = ?")) {
+        const app = mockApplications.find(a => String(a.id) === String(params[0]));
+        return [app ? [app] : []];
       }
       if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_LOAN_APPLICATIONS")) {
-        let filtered = [...mockLeads];
-        if (params.length > 0 && typeof params[0] === "string" && params[0].startsWith("%") && params[0].endsWith("%")) {
-          const searchVal = params[0].replace(/%/g, "").toLowerCase();
-          filtered = filtered.filter(l => 
-            l.mobile.includes(searchVal) || 
-            (l.pan_number && l.pan_number.toLowerCase().includes(searchVal)) || 
-            (l.email && l.email.toLowerCase().includes(searchVal)) ||
-            (l.full_name && l.full_name.toLowerCase().includes(searchVal))
-          );
-        }
-        return [filtered];
+        return [mockApplications];
       }
-      if (normalizedSql.includes("UPDATE WAQT_MONEY_LOAN_APPLICATIONS SET")) {
-        const id = params[params.length - 1];
-        const lead = mockLeads.find(l => l.application_id === id);
-        if (lead) {
-          if (sql.includes("current_step = ?")) {
-            lead.current_step = params[0];
-          }
-          if (sql.includes("lead_visible = ?")) {
-            lead.lead_visible = params[sql.includes("current_step") ? 1 : 0] ? 1 : 0;
-          }
-        }
-        return [{ affectedRows: 1 }];
+      if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_HERO_LEADS")) {
+        return [mockHeroLeads];
       }
       if (normalizedSql.includes("SELECT * FROM WAQT_MONEY_CONTACT_QUERIES")) {
-        return [mockContacts];
+        return [mockContactQueries];
       }
+
       return [[]];
     },
     async execute(sql, params = []) {
@@ -378,20 +349,32 @@ if (process.env.BYPASS_DB === "true") {
           image VARCHAR(255) NULL,
           author VARCHAR(100) DEFAULT 'Waqt Financial Expert',
           category VARCHAR(100) DEFAULT 'Finance',
+          status VARCHAR(20) DEFAULT 'ACTIVE',
+          read_time VARCHAR(50) DEFAULT '5 Min Read',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
 
-      // Always ensure blogs are updated with latest realistic content
-      await connection.execute("DELETE FROM waqt_money_blogs");
-      logger.info("Seeding default financial articles into waqt_money_blogs table...");
-      for (const blog of mockBlogsSeed) {
-        await connection.execute(
-          "INSERT INTO waqt_money_blogs (slug, title, excerpt, content, image, author, category) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [blog.slug, blog.title, blog.excerpt, blog.content, blog.image, blog.author, blog.category]
-        );
+      // Ensure status and read_time columns exist on existing table
+      try {
+        await connection.execute("ALTER TABLE waqt_money_blogs ADD COLUMN status VARCHAR(20) DEFAULT 'ACTIVE'");
+      } catch (e) {}
+      try {
+        await connection.execute("ALTER TABLE waqt_money_blogs ADD COLUMN read_time VARCHAR(50) DEFAULT '5 Min Read'");
+      } catch (e) {}
+
+      // Only seed default blogs if table is empty
+      const [[countRes]] = await connection.execute("SELECT COUNT(*) AS total FROM waqt_money_blogs");
+      if (!countRes || countRes.total === 0) {
+        logger.info("Seeding default financial articles into waqt_money_blogs table...");
+        for (const blog of mockBlogsSeed) {
+          await connection.execute(
+            "INSERT INTO waqt_money_blogs (slug, title, excerpt, content, image, author, category, status, read_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [blog.slug, blog.title, blog.excerpt, blog.content, blog.image, blog.author, blog.category, "ACTIVE", blog.readTime || "5 Min Read"]
+          );
+        }
+        logger.info("Seeding complete!");
       }
-      logger.info("Seeding complete!");
 
       connection.release();
     } catch (error) {

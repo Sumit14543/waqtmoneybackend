@@ -8,8 +8,10 @@ export const getBlogs = async (req, res) => {
     const [blogs] = await db.query(
       "SELECT * FROM waqt_money_blogs ORDER BY id DESC"
     );
-    const cleanedBlogs = blogs.map((b) => ({
+    const cleanedBlogs = (blogs || []).map((b) => ({
       ...b,
+      readTime: b.read_time || b.readTime || "5 Min Read",
+      status: b.status || "ACTIVE",
       image: b.image ? b.image : "/blog-assets/blog-1-personal-loan-guide.webp"
     }));
     return res.status(200).json({
@@ -45,6 +47,8 @@ export const getBlogBySlug = async (req, res) => {
 
     const blog = {
       ...rows[0],
+      readTime: rows[0].read_time || rows[0].readTime || "5 Min Read",
+      status: rows[0].status || "ACTIVE",
       image: rows[0].image ? rows[0].image : "/blog-assets/blog-1-personal-loan-guide.webp"
     };
 
@@ -83,7 +87,7 @@ export const createBlog = async (req, res) => {
 
     try {
       const [result] = await db.query(
-        "INSERT INTO waqt_money_blogs (slug, title, excerpt, content, image, author, category) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO waqt_money_blogs (slug, title, excerpt, content, image, author, category, status, read_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           cleanSlug,
           title,
@@ -92,6 +96,8 @@ export const createBlog = async (req, res) => {
           image,
           author || "Waqt Money Team",
           category || "Personal Loan",
+          blogStatus,
+          read,
         ]
       );
 
@@ -180,7 +186,7 @@ export const updateBlog = async (req, res) => {
       );
 
       if (rows.length > 0) {
-        const fields = ["title = ?", "slug = ?", "category = ?", "author = ?", "excerpt = ?", "content = ?", "status = ?"];
+        const fields = ["title = ?", "slug = ?", "category = ?", "author = ?", "excerpt = ?", "content = ?", "status = ?", "read_time = ?"];
         const params = [
           title || rows[0].title,
           cleanSlug || rows[0].slug,
@@ -189,6 +195,7 @@ export const updateBlog = async (req, res) => {
           excerpt || rows[0].excerpt,
           content || rows[0].content,
           status || rows[0].status || "ACTIVE",
+          readTime || rows[0].read_time || "5 Min Read",
         ];
 
         if (image !== undefined) {
