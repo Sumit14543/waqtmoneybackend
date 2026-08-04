@@ -22,7 +22,7 @@ test("application recovery requires matching contact proof", () => {
 });
 
 test("payment origins require HTTPS and an exact allowlist match", () => {
-  const allowed = ["https://waqtmoney.com", "https://www.waqtmoney.com"];
+  const allowed = ["https://waqtmoney.com"];
   assert.equal(getTrustedHttpsOrigin("https://waqtmoney.com/", allowed), "https://waqtmoney.com");
   assert.equal(getTrustedHttpsOrigin("https://evil.example", allowed), "");
   assert.equal(getTrustedHttpsOrigin("http://waqtmoney.com", allowed), "");

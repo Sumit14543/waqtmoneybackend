@@ -11,7 +11,6 @@ const uniqueList = (items) => [...new Set(items.filter(Boolean))];
 
 export const PRODUCTION_WEB_ORIGINS = listFromEnv(process.env.PRODUCTION_WEB_ORIGINS, [
   "https://waqtmoney.com",
-  "https://www.waqtmoney.com",
 ]);
 export const LOCAL_WEB_ORIGINS = listFromEnv(process.env.LOCAL_WEB_ORIGINS, [
   "http://localhost:8080",
