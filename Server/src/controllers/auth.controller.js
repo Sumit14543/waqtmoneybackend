@@ -460,8 +460,8 @@ const getDashboardCrmStageKey = (crmStatus = {}) => {
     crmStatus.disbursedAmount
   );
   const hasRepayment = Boolean(
-    repaymentStatus ||
-      firstPositiveNumber(crmStatus.repayment?.totalAmount, crmStatus.repayment?.balanceAmount, crmStatus.repayment?.paidAmount)
+    ["paid", "closed", "completed", "complete", "active"].includes(repaymentStatus) &&
+    firstPositiveNumber(crmStatus.repayment?.totalAmount, crmStatus.repayment?.balanceAmount, crmStatus.repayment?.paidAmount) > 0
   );
 
   if (["paid", "closed", "completed", "complete"].includes(repaymentStatus)) {
@@ -472,12 +472,12 @@ const getDashboardCrmStageKey = (crmStatus = {}) => {
     hasRepayment ||
     disbursedAmount > 0 ||
     ["paid", "completed", "complete", "disbursed", "success", "successful"].includes(disbursementStatus) ||
-    /\b(converted|disbursed|repayment|active)\b/.test(crmStatusText)
+    /\b(disbursed|loan_disbursed)\b/.test(crmStatusText)
   ) {
     return "loan_disbursed";
   }
 
-  if (/\b(account|disbursement|disbursal)\b/.test(crmStatusText)) {
+  if (/\b(account|accounts|disbursement|disbursal|queued)\b/.test(crmStatusText)) {
     return "sent_to_accounts";
   }
 
@@ -512,15 +512,15 @@ const getDashboardCrmPresentation = (crmStatus = {}) => {
       statusTitle: "Sent to accounts",
       statusDescription: "Your signed agreement has been received and the loan is queued for disbursement.",
       nextExpectedAction: crmStatus.nextExpectedAction || "",
-      progressPercent: crmStatus.progressPercent,
+      progressPercent: crmStatus.progressPercent || 80,
     };
   }
 
   return {
-    statusTitle: crmStatus.statusTitle,
-    statusDescription: crmStatus.statusDescription,
-    nextExpectedAction: crmStatus.nextExpectedAction,
-    progressPercent: crmStatus.progressPercent,
+    statusTitle: crmStatus.dashboardStatusTitle || crmStatus.statusTitle || crmStatus.publicStatus || crmStatus.crmStatus || "Application received",
+    statusDescription: crmStatus.dashboardStatusDescription || crmStatus.statusDescription || "Your application is currently under review by our underwriting team.",
+    nextExpectedAction: crmStatus.dashboardNextExpectedAction || crmStatus.nextExpectedAction || "Awaiting verification completion",
+    progressPercent: crmStatus.dashboardProgressPercent || crmStatus.progressPercent || 30,
   };
 };
 
@@ -667,6 +667,15 @@ const getCrmCandidateIds = (application = {}) => {
 
 const toDashboardLoan = (loan, crmStatus = null) => {
   const dashboardCrmStatus = withDashboardCrmStage(crmStatus);
+  const isDisbursed =
+    dashboardCrmStatus?.dashboardCurrentStageKey === "loan_disbursed" ||
+    dashboardCrmStatus?.dashboardCurrentStageKey === "repayment_received" ||
+    firstPositiveNumber(
+      crmStatus?.sanction?.disbursedAmount,
+      crmStatus?.disbursement?.disbursedAmount,
+      crmStatus?.disbursedAmount
+    ) > 0;
+
   const crmLoanAmount = Number(crmStatus?.loanAmount || 0);
   const crmRepaymentLoanAmount = Number(crmStatus?.repayment?.loanAmount || crmStatus?.repayment?.loan_amount || 0);
   const amount = firstPositiveNumber(crmRepaymentLoanAmount, crmLoanAmount, loan.loan_amount, loan.principal_amount);
@@ -683,67 +692,76 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     crmStatus?.approvedLoanAmount,
     crmStatus?.approvedAmount,
     crmStatus?.sanctionedAmount,
+    loan.approved_amount,
     loan.loan_amount,
     loan.principal_amount
   );
-  const totalRepayableAmount = firstPositiveNumber(
-    repayment.totalAmount,
-    repayment.total_amount,
-    repayment.dueAmount,
-    repayment.due_amount,
-    repayment.totalDue,
-    repayment.total_due,
-    repayment.maturityAmount,
-    repayment.maturity_amount,
-    repayment.repaymentAmount,
-    repayment.repayment_amount,
-    sanction.repaymentAmount,
-    sanction.maturityAmount,
-    crmStatus?.maturityAmount,
-    crmStatus?.totalRepayableAmount,
-    loan.total_repayable_amount,
-    loan.maturity_amount
-  );
-  const crmOutstandingAmount = firstPositiveNumber(
-    disbursement.outstanding,
-    disbursement.outstandingAmount,
-    disbursement.outstanding_amount,
-    repayment.balanceAmount,
-    repayment.balance_amount,
-    repayment.outstanding,
-    repayment.outstandingAmount,
-    repayment.outstanding_amount,
-    repayment.nextPaymentAmount,
-    repayment.next_payment_amount,
-    getCrmRepaymentOutstanding(crmStatus || {}),
-    loan.outstanding_amount,
-    loan.next_payment_amount
-  );
+  const totalRepayableAmount = isDisbursed
+    ? firstPositiveNumber(
+        repayment.totalAmount,
+        repayment.total_amount,
+        repayment.dueAmount,
+        repayment.due_amount,
+        repayment.totalDue,
+        repayment.total_due,
+        repayment.maturityAmount,
+        repayment.maturity_amount,
+        repayment.repaymentAmount,
+        repayment.repayment_amount,
+        sanction.repaymentAmount,
+        sanction.maturityAmount,
+        crmStatus?.maturityAmount,
+        crmStatus?.totalRepayableAmount,
+        loan.total_repayable_amount,
+        loan.maturity_amount
+      )
+    : 0;
+  const crmOutstandingAmount = isDisbursed
+    ? firstPositiveNumber(
+        disbursement.outstanding,
+        disbursement.outstandingAmount,
+        disbursement.outstanding_amount,
+        repayment.balanceAmount,
+        repayment.balance_amount,
+        repayment.outstanding,
+        repayment.outstandingAmount,
+        repayment.outstanding_amount,
+        repayment.nextPaymentAmount,
+        repayment.next_payment_amount,
+        getCrmRepaymentOutstanding(crmStatus || {}),
+        loan.outstanding_amount,
+        loan.next_payment_amount
+      )
+    : 0;
   const repaymentAmount = Math.round(crmOutstandingAmount);
-  const paidAmount = toFiniteNumber(
-    repayment.paidAmount !== undefined && repayment.paidAmount !== null
-      ? repayment.paidAmount
-      : repayment.amountPaid ??
-        repayment.amount_paid ??
-        repayment.paid_amount ??
-        repayment.repaymentPaidAmount ??
-        repayment.repayment_paid_amount ??
-        loan.repayment_paid_amount ??
-        loan.paid_amount
-  );
-  const dueDate = normalizeCrmDate(
-    repayment.loanDueDate ||
-    repayment.loan_due_date ||
-    repayment.repaymentDueDate ||
-    repayment.repayment_due_date ||
-    repayment.dueDate ||
-    repayment.due_date ||
-    crmStatus?.disbursement?.dueDate ||
-    crmStatus?.sanction?.dueDate ||
-    loan.repayment_due_date ||
-    loan.due_date ||
-    ""
-  );
+  const paidAmount = isDisbursed
+    ? toFiniteNumber(
+        repayment.paidAmount !== undefined && repayment.paidAmount !== null
+          ? repayment.paidAmount
+          : repayment.amountPaid ??
+            repayment.amount_paid ??
+            repayment.paid_amount ??
+            repayment.repaymentPaidAmount ??
+            repayment.repayment_paid_amount ??
+            loan.repayment_paid_amount ??
+            loan.paid_amount
+      )
+    : 0;
+  const dueDate = isDisbursed
+    ? normalizeCrmDate(
+        repayment.loanDueDate ||
+        repayment.loan_due_date ||
+        repayment.repaymentDueDate ||
+        repayment.repayment_due_date ||
+        repayment.dueDate ||
+        repayment.due_date ||
+        crmStatus?.disbursement?.dueDate ||
+        crmStatus?.sanction?.dueDate ||
+        loan.repayment_due_date ||
+        loan.due_date ||
+        ""
+      )
+    : "";
 
   const applicationId =
     crmStatus?.sourceLeadId ||
@@ -817,9 +835,9 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     tenureDays: tenureDays ? String(tenureDays) : "",
     interestRate: displayInterestRate,
     interestAccrued,
-    disbursalDate: getCrmDisbursalDate(crmStatus) || loan.disbursal_date || "",
+    disbursalDate: isDisbursed ? (getCrmDisbursalDate(crmStatus) || loan.disbursal_date || "") : "",
     agreementNumber: disbursement.agreementNumber || sanction.agreementNumber || "",
-    disbursedAmount: firstPositiveNumber(disbursement.disbursedAmount, sanction.disbursedAmount, crmStatus?.disbursedAmount),
+    disbursedAmount: isDisbursed ? firstPositiveNumber(disbursement.disbursedAmount, sanction.disbursedAmount, crmStatus?.disbursedAmount) : 0,
     disbursementStatus: disbursement.status || "",
     crmRepaymentDetails: null,
     crmStatus: dashboardCrmStatus,

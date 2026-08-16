@@ -156,6 +156,12 @@ const buildTestingPayload = (lead) => {
   const companyName = asText(lead.companyName, lead.company_name);
   const designation = asText(lead.designation);
   const officeEmail = asText(lead.officeEmail, lead.office_email);
+  const officialEmailDomain = asText(lead.official_email_domain, lead.officialEmailDomain);
+  const officialEmailType = asText(lead.official_email_type, lead.officialEmailType);
+  const officialEmailMxValid = firstPresent(lead.official_email_mx_valid, lead.officialEmailMxValid);
+  const officialEmailIsPersonal = firstPresent(lead.official_email_is_personal, lead.officialEmailIsPersonal);
+  const officialEmailIsDisposable = firstPresent(lead.official_email_is_disposable, lead.officialEmailIsDisposable);
+  const officialEmailValidationStatus = asText(lead.official_email_validation_status, lead.officialEmailValidationStatus);
   const salaryDay = asText(lead.salaryDay, lead.salary_day);
   const officeAddress = asText(lead.officeAddress, lead.office_address);
   const officePincode = asText(lead.officePincode, lead.office_pincode);
@@ -273,6 +279,12 @@ const buildTestingPayload = (lead) => {
     designation,
     officeEmail,
     office_email: officeEmail,
+    official_email_type: officialEmailType || (officeEmail ? "business" : null),
+    official_email_domain: officialEmailDomain,
+    official_email_mx_valid: officialEmailMxValid === 1 || officialEmailMxValid === true,
+    official_email_is_personal: officialEmailIsPersonal === 1 || officialEmailIsPersonal === true,
+    official_email_is_disposable: officialEmailIsDisposable === 1 || officialEmailIsDisposable === true,
+    official_email_validation_status: officialEmailValidationStatus || (officeEmail ? "valid" : null),
     salaryDay,
     salary_day: salaryDay,
     officeAddress,

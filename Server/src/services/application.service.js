@@ -3,6 +3,7 @@ import mysql from "mysql2/promise";
 import { fetchUanByMobile } from "./uan.service.js";
 import { processAndSaveLocation } from "./location.service.js";
 import logger from "../utils/logger.js";
+import { validateOfficialEmail } from "./emailValidation.service.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
 const LEGACY_APPLICATION_TABLE = "loan_applications";
@@ -612,6 +613,13 @@ export const updateWorkDetails = async (id, data) => {
     ["company_name", "varchar(255) NULL"],
     ["designation", "varchar(255) NULL"],
     ["office_email", "varchar(255) NULL"],
+    ["official_email_domain", "varchar(255) NULL"],
+    ["official_email_type", "varchar(50) NULL"],
+    ["official_email_mx_valid", "tinyint(1) NULL"],
+    ["official_email_is_personal", "tinyint(1) NULL"],
+    ["official_email_is_disposable", "tinyint(1) NULL"],
+    ["official_email_validation_status", "varchar(50) NULL"],
+    ["official_email_checked_at", "datetime NULL"],
     ["salary_day", "int NULL"],
     ["office_address", "text NULL"],
     ["office_pincode", "varchar(10) NULL"],
@@ -630,7 +638,15 @@ export const updateWorkDetails = async (id, data) => {
 
   if (!company) throw badRequest("Company name is required");
   if (!designation) throw badRequest("Designation is required");
-  if (officeEmail && !/^\S+@\S+\.\S+$/.test(officeEmail)) throw badRequest("Valid office email is required");
+  
+  let validationResult = null;
+  if (officeEmail) {
+    validationResult = await validateOfficialEmail(officeEmail);
+    if (!validationResult.valid) {
+      throw badRequest(validationResult.reason || "Please enter a valid official/company email address.");
+    }
+  }
+
   if (!Number.isInteger(salaryDay) || salaryDay < 1 || salaryDay > 31) {
     throw badRequest("Salary day must be between 1 and 31");
   }
@@ -647,6 +663,13 @@ export const updateWorkDetails = async (id, data) => {
      SET company_name = ?,
          designation = ?,
          office_email = ?,
+         official_email_domain = ?,
+         official_email_type = ?,
+         official_email_mx_valid = ?,
+         official_email_is_personal = ?,
+         official_email_is_disposable = ?,
+         official_email_validation_status = ?,
+         official_email_checked_at = NOW(),
          salary_day = ?,
          office_address = ?,
          office_pincode = ?,
@@ -658,7 +681,13 @@ export const updateWorkDetails = async (id, data) => {
     [
       company,
       designation,
-      officeEmail,
+      officeEmail || null,
+      validationResult ? validationResult.domain : null,
+      validationResult ? validationResult.type : null,
+      validationResult ? (validationResult.mx_valid ? 1 : 0) : null,
+      validationResult ? (validationResult.is_personal ? 1 : 0) : null,
+      validationResult ? (validationResult.is_disposable ? 1 : 0) : null,
+      validationResult ? (validationResult.valid ? "valid" : "invalid") : null,
       salaryDay,
       officeAddress,
       officePincode,
@@ -739,6 +768,18 @@ export const updateReferenceDetails = async (id, data) => {
   if (!reference2Name) throw badRequest("Reference 2 name is required");
   if (!/^[6-9]\d{9}$/.test(reference2Mobile)) throw badRequest("Reference 2 mobile number is invalid");
   if (!reference2Relation) throw badRequest("Reference 2 relation is required");
+  if (reference1Mobile === reference2Mobile) {
+    throw badRequest("Reference 1 and Reference 2 mobile numbers must be different");
+  }
+
+  const isFamilyRelation = (rel) =>
+    ["family", "relative", "father", "mother", "spouse", "brother", "sister", "parent"].includes(
+      String(rel || "").trim().toLowerCase()
+    );
+
+  if (!isFamilyRelation(reference1Relation) && !isFamilyRelation(reference2Relation)) {
+    throw badRequest("At least one reference must be a family member or relative");
+  }
 
   const lookup = buildApplicationLookup(id);
   const [result] = await db.execute(

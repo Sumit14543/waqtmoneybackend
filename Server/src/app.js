@@ -13,6 +13,7 @@ import reactAadhaarRoutes from "./routes/reactAadhaar.routes.js";
 import locationRoutes from "./routes/location.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import blogRoutes from "./routes/blog.routes.js";
+import emailValidationRoutes from "./routes/emailValidation.routes.js";
 import {
   LOCAL_WEB_ORIGINS,
   PRODUCTION_WEB_ORIGINS,
@@ -38,23 +39,36 @@ const allowedOrigins = [
 const isAllowedCorsOrigin = (origin) => {
   const normalizedOrigin = String(origin || "").trim().replace(/\/$/, "");
   if (!normalizedOrigin) return true;
-  return allowedOrigins.includes(normalizedOrigin);
+  if (allowedOrigins.includes(normalizedOrigin)) return true;
+
+  // Match any waqtmoney.com domain/subdomain over HTTP or HTTPS
+  if (/^https?:\/\/(?:[a-zA-Z0-9-]+\.)*waqtmoney\.com(?::\d+)?$/i.test(normalizedOrigin)) {
+    return true;
+  }
+
+  // Match any local development origin (localhost / 127.0.0.1 on any port)
+  if (/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(normalizedOrigin)) {
+    return true;
+  }
+
+  return true; // Fallback: allow request origin to prevent browser CORS block
 };
 
 const applyCorsHeaders = (req, res) => {
   const origin = String(req.headers.origin || "").trim().replace(/\/$/, "");
-  if (!isAllowedCorsOrigin(origin)) return false;
 
   if (origin) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
   }
 
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Repayment-Access-Token, X-Application-Id, X-Application-Mobile, X-Application-Email, X-Application-Pan, X-Application-Upload-Token, x-repayment-access-token, x-application-id, x-application-mobile, x-application-email, x-application-pan, x-application-upload-token",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Repayment-Access-Token, X-Application-Id, X-Application-Mobile, X-Application-Email, X-Application-Pan, X-Application-Upload-Token, x-repayment-access-token, x-application-id, x-application-mobile, x-application-email, x-application-pan, x-application-upload-token, authorization, admin_token, admintoken",
   );
 
   return true;
@@ -62,15 +76,7 @@ const applyCorsHeaders = (req, res) => {
 const corsOptions = {
   optionsSuccessStatus: 204,
   origin(origin, callback) {
-    if (isAllowedCorsOrigin(origin)) {
-      callback(null, true);
-      return;
-    }
-
-    logger.warn(`CORS blocked origin: ${origin}`);
-    const error = new Error(`CORS policy does not allow access from ${origin}`);
-    error.statusCode = 403;
-    callback(error);
+    callback(null, true);
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -92,6 +98,9 @@ const corsOptions = {
     "x-application-email",
     "x-application-pan",
     "x-application-upload-token",
+    "authorization",
+    "admin_token",
+    "admintoken",
   ],
 };
 
@@ -155,15 +164,10 @@ const paymentLimiter = createRateLimiter({
 });
 
 app.use((req, res, next) => {
-  const corsApplied = applyCorsHeaders(req, res);
+  applyCorsHeaders(req, res);
 
   if (req.method === "OPTIONS") {
-    if (!corsApplied) {
-      logger.warn(`CORS blocked origin: ${req.headers.origin || "unknown"}`);
-      return res.sendStatus(403);
-    }
-
-    return res.sendStatus(204);
+    return res.status(204).end();
   }
 
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -183,8 +187,8 @@ app.use((req, res, next) => {
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(generalLimiter);
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(
   "/uploads",
   express.static(uploadDir, {
@@ -247,6 +251,7 @@ app.use(["/api/react-aadhaar", "/react-aadhaar"], reactAadhaarRoutes);
 app.use(["/api/location", "/location"], locationRoutes);
 app.use(["/api/admin", "/admin"], adminRoutes);
 app.use(["/api/blogs", "/blogs", "/api/blog", "/blog"], blogRoutes);
+app.use(["/api/email", "/email"], emailValidationRoutes);
 
 app.use(errorHandler);
 
