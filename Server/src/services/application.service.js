@@ -837,6 +837,11 @@ export const createApplication = async (data) => {
     throw badRequest(`Missing required fields: ${missingFields.join(", ")}`);
   }
 
+  const salaryNum = Number(String(salary).replace(/\D/g, ""));
+  if (Number.isNaN(salaryNum) || salaryNum < 20000) {
+    throw badRequest("Monthly salary must be at least ₹20,000.");
+  }
+
   if (!termsAccepted) {
     throw badRequest("Terms must be accepted");
   }
