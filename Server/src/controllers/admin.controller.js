@@ -180,9 +180,9 @@ export const getAdminLeads = async (req, res) => {
 
       const conditions = [];
       if (search) {
-        conditions.push("(mobile LIKE ? OR pan_number LIKE ? OR email LIKE ? OR full_name LIKE ?)");
-        params.push(search, search, search, search);
-        countParams.push(search, search, search, search);
+        conditions.push("(mobile LIKE ? OR pan_number LIKE ? OR email LIKE ? OR full_name LIKE ? OR application_id LIKE ?)");
+        params.push(search, search, search, search, search);
+        countParams.push(search, search, search, search, search);
       }
       if (loanType) {
         conditions.push("loan_type = ?");
@@ -196,7 +196,7 @@ export const getAdminLeads = async (req, res) => {
         countQuery += whereClause;
       }
 
-      query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+      query += " ORDER BY last_activity_at DESC, created_at DESC, id DESC LIMIT ? OFFSET ?";
       params.push(limit, offset);
 
       const [[countResult]] = await db.query(countQuery, countParams);
@@ -231,8 +231,8 @@ export const getAdminLeadById = async (req, res) => {
   try {
     const { id } = req.params;
     const [rows] = await db.query(
-      `SELECT * FROM ${APPLICATION_TABLE} WHERE application_id = ?`,
-      [id]
+      `SELECT * FROM ${APPLICATION_TABLE} WHERE application_id = ? OR id = ?`,
+      [id, id]
     );
 
     if (rows.length === 0) {
