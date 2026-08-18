@@ -164,6 +164,37 @@ export const getAdminSummary = async (req, res) => {
   }
 };
 
+const normalizeAndHealLead = (lead) => {
+  if (!lead) return lead;
+
+  let targetStep = lead.current_step;
+  if (lead.video_kyc || lead.completed_at) {
+    targetStep = "video_kyc_completed";
+  } else if (lead.salary_slip_current || lead.selfie_photo) {
+    if (!["video_kyc_completed", "completed"].includes(lead.current_step)) {
+      targetStep = "documents_uploaded";
+    }
+  } else if (lead.reference1_name || lead.reference2_name) {
+    if (!["video_kyc_completed", "completed", "documents_uploaded", "upload_docs"].includes(lead.current_step)) {
+      targetStep = "references";
+    }
+  } else if (lead.bank_name || lead.account_number) {
+    if (!["video_kyc_completed", "completed", "documents_uploaded", "upload_docs", "references"].includes(lead.current_step)) {
+      targetStep = "bank_details";
+    }
+  }
+
+  if (targetStep && targetStep !== lead.current_step) {
+    db.query(
+      `UPDATE ${APPLICATION_TABLE} SET current_step = ?, last_activity_at = NOW() WHERE id = ? OR application_id = ?`,
+      [targetStep, lead.id, lead.application_id]
+    ).catch(() => {});
+    lead.current_step = targetStep;
+  }
+
+  return lead;
+};
+
 export const getAdminLeads = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit || "20", 10);
@@ -202,9 +233,11 @@ export const getAdminLeads = async (req, res) => {
       const [[countResult]] = await db.query(countQuery, countParams);
       const [leads] = await db.query(query, params);
 
+      const healedLeads = (leads || []).map(normalizeAndHealLead);
+
       return res.status(200).json({
         success: true,
-        leads: leads || [],
+        leads: healedLeads,
         totalCount: countResult?.total || 0,
         page,
         limit,
@@ -242,9 +275,11 @@ export const getAdminLeadById = async (req, res) => {
       });
     }
 
+    const healedLead = normalizeAndHealLead(rows[0]);
+
     return res.status(200).json({
       success: true,
-      lead: rows[0],
+      lead: healedLead,
     });
   } catch (error) {
     return res.status(500).json({
