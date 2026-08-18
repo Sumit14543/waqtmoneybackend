@@ -151,7 +151,7 @@ const buildTestingPayload = (lead) => {
   const incomeReceivedIn = asText(lead.incomeReceivedIn, lead.income_received_in);
   const city = asText(lead.city);
   const pincode = asText(lead.pincode);
-  const loanAmount = asNumber(lead.loanAmount, lead.loan_amount, lead.requestedLoanAmount);
+  const loanAmount = asNumber(lead.loanAmount, lead.loan_amount, lead.requestedLoanAmount, lead.requested_loan_amount) || 18000;
   const loanPurpose = asText(lead.loanPurpose, lead.loan_purpose);
   const companyName = asText(lead.companyName, lead.company_name);
   const designation = asText(lead.designation);
@@ -213,17 +213,28 @@ const buildTestingPayload = (lead) => {
     },
   ].filter((reference) => reference.fullName || reference.mobile || reference.relation);
 
+  const cleanLeadId =
+    onlyDigits(
+      firstPresent(
+        lead.sourceLeadId,
+        lead.source_lead_id,
+        lead.sourceApplicationId,
+        lead.source_application_id,
+        applicationId
+      )
+    ) || applicationId;
+
   return {
     id: recordId,
     application_id: applicationId,
     user_id: userId,
     sourceSystem: "waqtmoney",
-    sourceLeadId: applicationId,
-    sourceApplicationId: asText(lead.sourceApplicationId, lead.source_application_id, applicationId),
+    sourceLeadId: cleanLeadId,
+    sourceApplicationId: cleanLeadId,
     sourceStatus: asText(lead.sourceStatus, lead.source_status, lead.status, "submitted"),
     source_system: "waqtmoney",
-    source_lead_id: applicationId,
-    source_application_id: asText(lead.sourceApplicationId, lead.source_application_id, applicationId),
+    source_lead_id: cleanLeadId,
+    source_application_id: cleanLeadId,
     source_status: asText(lead.sourceStatus, lead.source_status, lead.status, "submitted"),
 
     loanType: asText(lead.loanType, lead.loan_type, "payday"),
