@@ -242,14 +242,26 @@ const hasRepaymentData = (crmStatus = {}) => {
 };
 
 const hasDisbursedStatus = (crmStatus = {}) => {
-  const statusCode = String(crmStatus?.statusCode || crmStatus?.crmStatus || "").toLowerCase();
+  const statusCode = String(crmStatus?.statusCode || crmStatus?.crmStatus || crmStatus?.currentStage || "").toLowerCase();
   const disbursementStatus = String(crmStatus?.disbursement?.status || "").toLowerCase();
+  const disbursedAmount = firstNumber(
+    crmStatus?.disbursement?.disbursedAmount,
+    crmStatus?.sanction?.disbursedAmount,
+    crmStatus?.disbursedAmount
+  );
 
-  return statusCode === "disbursed" || disbursementStatus === "completed";
+  return (
+    statusCode === "disbursed" ||
+    statusCode === "loan_disbursed" ||
+    statusCode === "repayment_received" ||
+    disbursementStatus === "completed" ||
+    disbursementStatus === "disbursed" ||
+    disbursedAmount > 0
+  );
 };
 
 export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus = null) => {
-  if (!crmStatus || (!hasRepaymentData(crmStatus) && !hasDisbursedStatus(crmStatus))) {
+  if (!crmStatus || !hasDisbursedStatus(crmStatus)) {
     return null;
   }
 
