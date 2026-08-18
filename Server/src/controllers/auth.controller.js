@@ -682,11 +682,31 @@ const toDashboardLoan = (loan, crmStatus = null) => {
   const sanction = crmStatus?.sanction || {};
   const repayment = crmStatus?.repayment || {};
   const disbursement = crmStatus?.disbursement || {};
-  const isApproved =
-    Boolean(sanction.approvedLoanAmount || sanction.approvedAmount || sanction.sanctionedAmount || sanction.principalAmount) ||
-    Boolean(repayment.loanAmount || repayment.loan_amount) ||
-    Boolean(loan.approved_amount) ||
-    ["approved", "sanctioned", "sent_to_accounts", "loan_disbursed", "repayment_received"].includes(dashboardCrmStatus?.dashboardCurrentStageKey);
+  const stageKey = String(
+    dashboardCrmStatus?.dashboardCurrentStageKey ||
+    crmStatus?.currentStage ||
+    crmStatus?.statusCode ||
+    crmStatus?.publicStatus ||
+    crmStatus?.crmStatus ||
+    ""
+  ).toLowerCase().trim();
+
+  const isApprovedStage = [
+    "approved",
+    "sanctioned",
+    "agreement_signed",
+    "sanction_issued",
+    "sent_to_accounts",
+    "loan_disbursed",
+    "repayment_received",
+    "disbursed",
+  ].includes(stageKey);
+
+  const hasSanctionPdf = Boolean(sanction.pdfUrl || sanction.pdfAvailable);
+  const hasDbApprovedAmount = Number(loan.approved_amount) > 0;
+  const hasRepaymentSchedule = Number(repayment.loanAmount || repayment.loan_amount) > 0;
+
+  const isApproved = isApprovedStage || hasSanctionPdf || hasDbApprovedAmount || hasRepaymentSchedule;
 
   const approvedLoanAmount = isApproved
     ? firstPositiveNumber(
@@ -800,15 +820,17 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     loan.tenure
   );
 
-  const interestRate = firstPositiveNumber(
-    repayment.interestRate,
-    repayment.interest_rate,
-    sanction.interestRate,
-    sanction.interest_rate,
-    crmStatus?.interestRate,
-    crmStatus?.interest_rate,
-    loan.interest_rate
-  );
+  const interestRate = isApproved
+    ? firstPositiveNumber(
+        repayment.interestRate,
+        repayment.interest_rate,
+        sanction.interestRate,
+        sanction.interest_rate,
+        crmStatus?.interestRate,
+        crmStatus?.interest_rate,
+        loan.interest_rate
+      )
+    : 0;
 
   const displayInterestRate = interestRate ? (String(interestRate).includes("%") ? String(interestRate) : `${interestRate}%`) : "";
 
