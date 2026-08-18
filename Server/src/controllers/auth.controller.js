@@ -682,18 +682,26 @@ const toDashboardLoan = (loan, crmStatus = null) => {
   const sanction = crmStatus?.sanction || {};
   const repayment = crmStatus?.repayment || {};
   const disbursement = crmStatus?.disbursement || {};
-  const approvedLoanAmount = firstPositiveNumber(
-    repayment.loanAmount,
-    repayment.loan_amount,
-    sanction.principalAmount,
-    sanction.approvedLoanAmount,
-    sanction.approvedAmount,
-    sanction.sanctionedAmount,
-    crmStatus?.approvedLoanAmount,
-    crmStatus?.approvedAmount,
-    crmStatus?.sanctionedAmount,
-    loan.approved_amount
-  );
+  const isApproved =
+    Boolean(sanction.approvedLoanAmount || sanction.approvedAmount || sanction.sanctionedAmount || sanction.principalAmount) ||
+    Boolean(repayment.loanAmount || repayment.loan_amount) ||
+    Boolean(loan.approved_amount) ||
+    ["approved", "sanctioned", "sent_to_accounts", "loan_disbursed", "repayment_received"].includes(dashboardCrmStatus?.dashboardCurrentStageKey);
+
+  const approvedLoanAmount = isApproved
+    ? firstPositiveNumber(
+        repayment.loanAmount,
+        repayment.loan_amount,
+        sanction.principalAmount,
+        sanction.approvedLoanAmount,
+        sanction.approvedAmount,
+        sanction.sanctionedAmount,
+        loan.approved_amount,
+        crmStatus?.approvedLoanAmount,
+        crmStatus?.approvedAmount,
+        crmStatus?.sanctionedAmount
+      )
+    : 0;
   const totalRepayableAmount = isDisbursed
     ? firstPositiveNumber(
         repayment.totalAmount,
@@ -1078,8 +1086,6 @@ export const dashboard = async (req, res) => {
         await Promise.all(
           loans.map(async (loan) => {
             const crmStatus = await fetchCrmLeadStatus(getCrmCandidateIds(loan)).catch(() => null);
-            if (!crmStatus) return null;
-
             return toDashboardLoan(loan, crmStatus);
           })
         )
