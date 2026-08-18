@@ -844,7 +844,7 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     disbursalDate: isDisbursed ? (getCrmDisbursalDate(crmStatus) || loan.disbursal_date || "") : "",
     agreementNumber: disbursement.agreementNumber || sanction.agreementNumber || "",
     disbursedAmount: isDisbursed ? firstPositiveNumber(disbursement.disbursedAmount, sanction.disbursedAmount, crmStatus?.disbursedAmount) : 0,
-    disbursementStatus: disbursement.status || "",
+    disbursementStatus: isDisbursed ? (disbursement.status || "disbursed") : "",
     crmRepaymentDetails: null,
     crmStatus: dashboardCrmStatus,
   };
