@@ -276,7 +276,6 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
     crmStatus.approvedAmount,
     crmStatus.approved_amount,
     crmStatus.sanctionedAmount,
-    crmStatus.loanAmount,
     repayment.principalDue
   );
   const finalTenureDays =

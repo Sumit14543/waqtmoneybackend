@@ -692,9 +692,7 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     crmStatus?.approvedLoanAmount,
     crmStatus?.approvedAmount,
     crmStatus?.sanctionedAmount,
-    loan.approved_amount,
-    loan.loan_amount,
-    loan.principal_amount
+    loan.approved_amount
   );
   const totalRepayableAmount = isDisbursed
     ? firstPositiveNumber(
