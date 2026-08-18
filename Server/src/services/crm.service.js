@@ -213,28 +213,19 @@ const buildTestingPayload = (lead) => {
     },
   ].filter((reference) => reference.fullName || reference.mobile || reference.relation);
 
-  const cleanLeadId =
-    onlyDigits(
-      firstPresent(
-        lead.sourceLeadId,
-        lead.source_lead_id,
-        lead.sourceApplicationId,
-        lead.source_application_id,
-        applicationId
-      )
-    ) || applicationId;
+  const sourceLeadId = asText(lead.sourceLeadId, lead.source_lead_id, lead.sourceApplicationId, lead.source_application_id, applicationId);
 
   return {
     id: recordId,
     application_id: applicationId,
     user_id: userId,
     sourceSystem: "waqtmoney",
-    sourceLeadId: cleanLeadId,
-    sourceApplicationId: cleanLeadId,
+    sourceLeadId: sourceLeadId,
+    sourceApplicationId: sourceLeadId,
     sourceStatus: asText(lead.sourceStatus, lead.source_status, lead.status, "submitted"),
     source_system: "waqtmoney",
-    source_lead_id: cleanLeadId,
-    source_application_id: cleanLeadId,
+    source_lead_id: sourceLeadId,
+    source_application_id: sourceLeadId,
     source_status: asText(lead.sourceStatus, lead.source_status, lead.status, "submitted"),
 
     loanType: asText(lead.loanType, lead.loan_type, "payday"),
