@@ -336,6 +336,11 @@ export const updateApplication = async (id, data) => {
     ["completed_at", "DATETIME NULL"],
   ]);
 
+  const empVal = data.employment || data.employment_status;
+  if (empVal && String(empVal).toLowerCase() !== "salaried") {
+    throw badRequest("We currently provide payday loans exclusively to salaried individuals. Self-employed applicants are not eligible at this time.");
+  }
+
   if (
     Object.prototype.hasOwnProperty.call(data, "uan_number") ||
     Object.prototype.hasOwnProperty.call(data, "uanNumber")
@@ -835,6 +840,10 @@ export const createApplication = async (data) => {
 
   if (missingFields.length > 0) {
     throw badRequest(`Missing required fields: ${missingFields.join(", ")}`);
+  }
+
+  if (String(employment).toLowerCase() !== "salaried") {
+    throw badRequest("We currently provide payday loans exclusively to salaried individuals. Self-employed applicants are not eligible at this time.");
   }
 
   const salaryNum = Number(String(salary).replace(/\D/g, ""));

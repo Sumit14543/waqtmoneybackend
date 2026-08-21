@@ -154,7 +154,7 @@ const generalLimiter = createRateLimiter({
 });
 const sensitiveLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: isProduction ? 20 : 200,
+  max: isProduction ? 5 : 200,
   message: "Too many verification attempts. Please try again after a few minutes.",
 });
 const paymentLimiter = createRateLimiter({
