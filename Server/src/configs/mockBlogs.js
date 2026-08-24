@@ -468,7 +468,7 @@ In this guide, we break down how payday salary advances work, how interest is ca
 To qualify for a payday loan at Waqt Money, you must meet the following criteria:
 - **Employment Status:** Salaried employee in a private company, MNC, SME, or government organization.
 - **Age:** Between 21 and 58 years.
-- **Minimum Net Salary:** ₹15,000 per month credited directly to a bank account.
+- **Minimum Net Salary:** ₹25,000 per month credited directly to a bank account.
 - **Bank Account:** Active salary bank account with internet banking or debit card access for e-NACH setup.
 
 ---

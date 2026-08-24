@@ -847,8 +847,8 @@ export const createApplication = async (data) => {
   }
 
   const salaryNum = Number(String(salary).replace(/\D/g, ""));
-  if (Number.isNaN(salaryNum) || salaryNum < 20000) {
-    throw badRequest("Monthly salary must be at least ₹20,000.");
+  if (Number.isNaN(salaryNum) || salaryNum < 25000) {
+    throw badRequest("Monthly salary must be at least ₹25,000.");
   }
 
   if (!termsAccepted) {
