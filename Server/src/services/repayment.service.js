@@ -42,7 +42,29 @@ const readJsonOrText = async (response) => {
   }
 };
 
-const unwrapCrmData = (payload) => payload?.data || payload;
+const unwrapCrmData = (payload, identifier = "") => {
+  let data = payload?.data !== undefined ? payload.data : payload;
+
+  if (Array.isArray(data)) {
+    if (data.length === 0) return null;
+
+    if (identifier) {
+      const idStr = String(identifier).trim().toLowerCase();
+      const matchedById = data.find((item) => {
+        const itemLoanId = String(item?.loanId || item?.loan_id || item?.sanction?.loanId || item?.repayment?.loanId || "").trim().toLowerCase();
+        const itemLeadId = String(item?.sourceLeadId || item?.source_lead_id || item?.sourceApplicationId || item?.applicationId || item?.id || "").trim().toLowerCase();
+        const itemCustId = String(item?.customerId || item?.customer_id || item?.custId || item?.cust_id || "").trim().toLowerCase();
+        return (itemLoanId && itemLoanId === idStr) || (itemLeadId && itemLeadId === idStr) || (itemCustId && itemCustId === idStr);
+      });
+      if (matchedById) return matchedById;
+    }
+
+    const disbursedLead = data.find((item) => hasDisbursedStatus(item));
+    return disbursedLead || data[0] || null;
+  }
+
+  return data || null;
+};
 const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
 const normalizePan = (value) => String(value || "").trim().toUpperCase();
 
@@ -210,7 +232,8 @@ const fetchCrmLeadStatus = async (params) => {
     throw error;
   }
 
-  return unwrapCrmData(payload);
+  const lookupIdentifier = params.sourceLeadId || params.sourceApplicationId || params.loanId || params.mobile || params.pan || "";
+  return unwrapCrmData(payload, lookupIdentifier);
 };
 
 const fetchCrmLeadStatusById = (identifier) =>
@@ -242,25 +265,76 @@ const hasRepaymentData = (crmStatus = {}) => {
 };
 
 const hasDisbursedStatus = (crmStatus = {}) => {
-  const statusCode = String(crmStatus?.statusCode || crmStatus?.crmStatus || crmStatus?.currentStage || "").toLowerCase();
-  const disbursementStatus = String(crmStatus?.disbursement?.status || "").toLowerCase();
+  if (!crmStatus || typeof crmStatus !== "object") return false;
+
+  if (Array.isArray(crmStatus)) {
+    return crmStatus.some((item) => hasDisbursedStatus(item));
+  }
+
+  const statusCode = String(
+    crmStatus?.statusCode ||
+      crmStatus?.crmStatus ||
+      crmStatus?.currentStage ||
+      crmStatus?.stage ||
+      crmStatus?.status ||
+      ""
+  ).toLowerCase();
+
+  const disbursementStatus = String(
+    crmStatus?.disbursement?.status ||
+      crmStatus?.disbursement_status ||
+      crmStatus?.disbursementStatus ||
+      ""
+  ).toLowerCase();
+
   const disbursedAmount = firstNumber(
     crmStatus?.disbursement?.disbursedAmount,
+    crmStatus?.disbursement?.disbursed_amount,
     crmStatus?.sanction?.disbursedAmount,
-    crmStatus?.disbursedAmount
+    crmStatus?.sanction?.disbursed_amount,
+    crmStatus?.disbursedAmount,
+    crmStatus?.disbursed_amount,
+    crmStatus?.disbursementAmount,
+    crmStatus?.disbursement_amount,
+    crmStatus?.disbursed_amt
   );
 
+  const repayment = normalizeRepaymentBlock(getCrmRepaymentBlock(crmStatus));
+  const hasOutstandingOrBalance =
+    repayment.balanceAmount > 0 ||
+    repayment.totalAmount > 0 ||
+    repayment.paidAmount > 0;
+
+  const validActiveOrDisbursedStages = [
+    "disbursed",
+    "loan_disbursed",
+    "repayment_received",
+    "overdue",
+    "dpd",
+    "active",
+    "collections",
+    "collection",
+    "delinquent",
+    "partially_paid",
+    "closed",
+    "settled",
+    "foreclosed",
+    "due",
+  ];
+
   return (
-    statusCode === "disbursed" ||
-    statusCode === "loan_disbursed" ||
-    statusCode === "repayment_received" ||
-    disbursementStatus === "completed" ||
-    disbursementStatus === "disbursed" ||
-    disbursedAmount > 0
+    validActiveOrDisbursedStages.includes(statusCode) ||
+    ["completed", "disbursed", "success", "successful"].includes(disbursementStatus) ||
+    disbursedAmount > 0 ||
+    hasOutstandingOrBalance
   );
 };
 
 export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus = null) => {
+  if (Array.isArray(crmStatus)) {
+    crmStatus = unwrapCrmData({ data: crmStatus }, identifier);
+  }
+
   if (!crmStatus || !hasDisbursedStatus(crmStatus)) {
     return null;
   }
@@ -316,7 +390,15 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
     requested_loan_amount: requestedLoanAmount || undefined,
     loan_amount: approvedLoanAmount || undefined,
     principal_amount: approvedLoanAmount || undefined,
-    disbursed_amount: firstNumber(crmStatus.disbursement?.disbursedAmount, crmStatus.sanction?.disbursedAmount) || undefined,
+    disbursed_amount:
+      firstNumber(
+        crmStatus.disbursement?.disbursedAmount,
+        crmStatus.disbursement?.disbursed_amount,
+        crmStatus.sanction?.disbursedAmount,
+        crmStatus.sanction?.disbursed_amount,
+        crmStatus.disbursedAmount,
+        crmStatus.disbursed_amount
+      ) || undefined,
     disbursal_date: crmStatus.disbursement?.disbursedAt || crmStatus.disbursement?.disbursalDate || crmStatus.disbursement?.disbursementDate || crmStatus.sanction?.disbursedAt || "",
     maturity_amount: totalAmount || undefined,
     total_repayable_amount: totalAmount || undefined,
