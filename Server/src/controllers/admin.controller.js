@@ -2,11 +2,56 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import db from "../configs/db.js";
 import { getJwtSecret } from "../configs/secrets.js";
+import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
 const HERO_LEADS_TABLE = "waqt_money_hero_leads";
 const CONTACT_QUERIES_TABLE = "waqt_money_contact_queries";
 const BLOGS_TABLE = "waqt_money_blogs";
+
+const ALLOWED_ADMIN_DOMAINS = ["waqtfinance.com", "waqtmoney.in"];
+
+const isAllowedAdminDomain = (email) => {
+  const normalized = String(email || "").trim().toLowerCase();
+  const parts = normalized.split("@");
+  if (parts.length !== 2) return false;
+  return ALLOWED_ADMIN_DOMAINS.includes(parts[1]);
+};
+
+const getAdminUsers = () => {
+  return [
+    {
+      email: (process.env.ADMIN_USER_1_EMAIL || "shivani@waqtfinance.com").trim().toLowerCase(),
+      pass: (process.env.ADMIN_USER_1_PASS || "Waqt@shivani@#2016##").trim(),
+    },
+    {
+      email: (process.env.ADMIN_USER_2_EMAIL || "support@waqtmoney.in").trim().toLowerCase(),
+      pass: (process.env.ADMIN_USER_2_PASS || "WaqtSupport@2026##").trim(),
+    },
+  ];
+};
+
+const verifyAdminAccount = (email, password) => {
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  const cleanPass = String(password || "").trim();
+
+  if (!isAllowedAdminDomain(cleanEmail)) {
+    return { valid: false, reason: "Only official @waqtfinance.com or @waqtmoney.in emails are allowed." };
+  }
+
+  const users = getAdminUsers();
+  const matchedUser = users.find((u) => u.email === cleanEmail);
+
+  if (!matchedUser) {
+    return { valid: false, reason: "Unauthorized admin email address." };
+  }
+
+  if (matchedUser.pass !== cleanPass) {
+    return { valid: false, reason: "Invalid administrator password." };
+  }
+
+  return { valid: true, user: matchedUser };
+};
 
 // In-Memory IP Brute Force Rate Limiter for Admin Login
 const loginAttempts = new Map();
@@ -43,10 +88,9 @@ const clearAttempts = (ip) => {
   loginAttempts.delete(ip);
 };
 
-export const adminLogin = async (req, res) => {
+export const adminSendOtp = async (req, res) => {
   const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
 
-  // Check rate limit
   const rateLimitStatus = checkRateLimit(clientIp);
   if (rateLimitStatus.blocked) {
     return res.status(429).json({
@@ -55,32 +99,73 @@ export const adminLogin = async (req, res) => {
     });
   }
 
-  const { username, password } = req.body;
+  const email = req.body.email || req.body.username;
+  const password = req.body.password;
+  const cleanEmail = String(email || "").trim().toLowerCase();
 
-  if (!username || !password) {
+  if (!cleanEmail || !password) {
     return res.status(400).json({
       success: false,
-      message: "Username and password are required",
+      message: "Email and password are required",
     });
   }
 
-  const expectedUser = (process.env.ADMIN_USER || "waqtadminwaqtmoney.com").trim();
-  const expectedPass = (process.env.ADMIN_PASS || "waqt#@#@1212@@").trim();
-  const hashedPass = process.env.ADMIN_HASHED_PASS;
-
-  let isMatch = false;
-
-  if (hashedPass) {
-    isMatch = (username === expectedUser) && await bcrypt.compare(password, hashedPass);
-  } else {
-    isMatch = (username === expectedUser) && (password === expectedPass);
+  const verification = verifyAdminAccount(cleanEmail, password);
+  if (!verification.valid) {
+    recordFailedAttempt(clientIp);
+    return res.status(401).json({
+      success: false,
+      message: verification.reason,
+    });
   }
 
-  if (isMatch) {
+  try {
+    const result = await sendOTPService({ email: cleanEmail });
+    return res.status(200).json({
+      success: true,
+      message: `OTP sent successfully to ${cleanEmail}`,
+      data: result,
+    });
+  } catch (err) {
+    if (err.statusCode === 429) {
+      return res.status(429).json({ success: false, message: err.message });
+    }
+    return res.status(err.statusCode || 500).json({
+      success: false,
+      message: err.message || "Failed to send OTP to email",
+    });
+  }
+};
+
+export const adminVerifyOtp = async (req, res) => {
+  const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+
+  const email = req.body.email || req.body.username;
+  const otp = req.body.otp;
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  const cleanOtp = String(otp || "").trim();
+
+  if (!cleanEmail || !cleanOtp) {
+    return res.status(400).json({
+      success: false,
+      message: "Email and OTP are required",
+    });
+  }
+
+  if (!isAllowedAdminDomain(cleanEmail)) {
+    return res.status(403).json({
+      success: false,
+      message: "Only official @waqtfinance.com or @waqtmoney.in emails are authorized.",
+    });
+  }
+
+  const otpResult = verifyOTPService({ email: cleanEmail, otp: cleanOtp });
+
+  if (otpResult === true) {
     clearAttempts(clientIp);
 
     const token = jwt.sign(
-      { username, role: "admin", loginTime: Date.now() },
+      { username: cleanEmail, email: cleanEmail, role: "admin", loginTime: Date.now() },
       getJwtSecret(),
       { expiresIn: "8h" }
     );
@@ -89,16 +174,24 @@ export const adminLogin = async (req, res) => {
       success: true,
       message: "Admin authentication successful",
       token,
-      username,
+      username: cleanEmail,
+      email: cleanEmail,
     });
   }
 
-  recordFailedAttempt(clientIp);
+  if (otpResult === "expired") {
+    return res.status(400).json({ success: false, message: "OTP has expired. Please request a new OTP." });
+  }
 
-  return res.status(401).json({
-    success: false,
-    message: "Invalid administrator credentials",
-  });
+  recordFailedAttempt(clientIp);
+  return res.status(400).json({ success: false, message: "Invalid OTP. Please check and try again." });
+};
+
+export const adminLogin = async (req, res) => {
+  if (req.body.otp) {
+    return adminVerifyOtp(req, res);
+  }
+  return adminSendOtp(req, res);
 };
 
 export const getAdminSummary = async (req, res) => {
@@ -202,6 +295,8 @@ export const getAdminLeads = async (req, res) => {
     const offset = (page - 1) * limit;
     const search = req.query.search ? `%${req.query.search}%` : null;
     const loanType = req.query.loanType || null;
+    const startDate = req.query.startDate || null;
+    const endDate = req.query.endDate || null;
 
     try {
       let query = `SELECT * FROM ${APPLICATION_TABLE}`;
@@ -219,6 +314,18 @@ export const getAdminLeads = async (req, res) => {
         conditions.push("loan_type = ?");
         params.push(loanType);
         countParams.push(loanType);
+      }
+      if (startDate) {
+        conditions.push("created_at >= ?");
+        const formattedStart = `${startDate} 00:00:00`;
+        params.push(formattedStart);
+        countParams.push(formattedStart);
+      }
+      if (endDate) {
+        conditions.push("created_at <= ?");
+        const formattedEnd = `${endDate} 23:59:59`;
+        params.push(formattedEnd);
+        countParams.push(formattedEnd);
       }
 
       if (conditions.length > 0) {
@@ -255,6 +362,105 @@ export const getAdminLeads = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error listing admin leads",
+      error: error.message,
+    });
+  }
+};
+
+export const exportAdminLeads = async (req, res) => {
+  try {
+    const search = req.query.search ? `%${req.query.search}%` : null;
+    const loanType = req.query.loanType || null;
+    const startDate = req.query.startDate || null;
+    const endDate = req.query.endDate || null;
+
+    let query = `SELECT * FROM ${APPLICATION_TABLE}`;
+    const params = [];
+    const conditions = [];
+
+    if (search) {
+      conditions.push("(mobile LIKE ? OR pan_number LIKE ? OR email LIKE ? OR full_name LIKE ? OR application_id LIKE ?)");
+      params.push(search, search, search, search, search);
+    }
+    if (loanType) {
+      conditions.push("loan_type = ?");
+      params.push(loanType);
+    }
+    if (startDate) {
+      conditions.push("created_at >= ?");
+      params.push(`${startDate} 00:00:00`);
+    }
+    if (endDate) {
+      conditions.push("created_at <= ?");
+      params.push(`${endDate} 23:59:59`);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(" AND ")}`;
+    }
+
+    query += " ORDER BY created_at DESC, id DESC";
+
+    const [leads] = await db.query(query, params);
+    const healedLeads = (leads || []).map(normalizeAndHealLead);
+
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const headers = [
+      "Application ID",
+      "Full Name",
+      "Email",
+      "Mobile",
+      "Loan Type",
+      "Loan Amount",
+      "Monthly Income",
+      "PAN Number",
+      "Aadhaar Number",
+      "Bank Name",
+      "Account Number",
+      "IFSC Code",
+      "Current Step",
+      "Created At",
+      "Last Activity At",
+    ];
+
+    const csvRows = [headers.join(",")];
+
+    for (const lead of healedLeads) {
+      const row = [
+        escapeCsv(lead.application_id),
+        escapeCsv(lead.full_name),
+        escapeCsv(lead.email),
+        escapeCsv(lead.mobile),
+        escapeCsv(lead.loan_type),
+        escapeCsv(lead.loan_amount),
+        escapeCsv(lead.monthly_income),
+        escapeCsv(lead.pan_number),
+        escapeCsv(lead.aadhaar_number),
+        escapeCsv(lead.bank_name),
+        escapeCsv(lead.account_number),
+        escapeCsv(lead.ifsc_code),
+        escapeCsv(lead.current_step),
+        escapeCsv(lead.created_at ? new Date(lead.created_at).toISOString() : ""),
+        escapeCsv(lead.last_activity_at ? new Date(lead.last_activity_at).toISOString() : ""),
+      ];
+      csvRows.push(row.join(","));
+    }
+
+    const csvContent = csvRows.join("\n");
+    const filename = `WaqtMoney_Leads_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.status(200).send(csvContent);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error exporting admin leads",
       error: error.message,
     });
   }

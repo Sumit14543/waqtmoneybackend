@@ -294,6 +294,17 @@ export const sendOTPService = async ({ phone, email }) => {
   });
 
   if (channels.length === 0) {
+    if (isLocalOtpDebugEnabled()) {
+      logger.warn("OTP delivery failed over SMTP/WhatsApp, but returning debug OTP since local debug mode is enabled. Debug OTP:", otp);
+      return {
+        success: true,
+        delivery: "debug",
+        channels: ["debug"],
+        ttl: Math.floor(OTP_TTL_MS / 1000),
+        warning: warnings.join(" | ") || undefined,
+        debugOtp: String(otp),
+      };
+    }
     getOtpKeys({ phone, email }).forEach((key) => {
       delete otpStore[key];
     });
