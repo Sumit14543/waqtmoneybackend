@@ -1,11 +1,11 @@
 import "./env.js";
 import nodemailer from "nodemailer";
 
-const smtpHost = process.env.SMTP_HOST?.trim();
-const smtpUser = (process.env.SMTP_USER || process.env.SMTP_USERNAME)?.trim();
-const smtpPass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD)?.trim();
-const smtpPort = Number.parseInt(process.env.SMTP_PORT ?? "587", 10);
-const smtpSecure = (process.env.SMTP_SECURE || "").trim().toLowerCase();
+const smtpHost = (process.env.SMTP_HOST || "localhost").trim();
+const smtpUser = (process.env.SMTP_USER || process.env.SMTP_USERNAME || "sanction@waqtmoney.com").trim();
+const smtpPass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "Waqt@@825792##").trim();
+const smtpPort = Number.parseInt(process.env.SMTP_PORT || "8081", 10);
+const smtpSecure = (process.env.SMTP_SECURE || "true").trim().toLowerCase();
 const smtpTlsServername = process.env.SMTP_TLS_SERVERNAME?.trim() || smtpHost;
 const smtpAddressFamily = Number.parseInt(process.env.SMTP_ADDRESS_FAMILY || "0", 10);
 const rejectUnauthorized = process.env.SMTP_REJECT_UNAUTHORIZED === "true";

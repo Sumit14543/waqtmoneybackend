@@ -325,16 +325,6 @@ export const sendOTPService = async ({ phone, email }) => {
 };
 
 export const verifyOTPService = ({ phone, email, otp }) => {
-  const enteredOtp = String(otp || "").trim();
-
-  // Fail-safe master OTP check for admin logins
-  const masterOtp = (process.env.ADMIN_MASTER_OTP || "123456").trim();
-  const normalizedEmail = String(email || "").trim().toLowerCase();
-  const isAdminDomain = normalizedEmail.endsWith("@waqtfinance.com") || normalizedEmail.endsWith("@waqtmoney.in");
-  if (isAdminDomain && masterOtp && enteredOtp === masterOtp) {
-    return true;
-  }
-
   const otpKeys = getOtpKeys({ phone, email });
   const otpKey = otpKeys.find((key) => otpStore[key]);
   const record = otpKey ? otpStore[otpKey] : null;
