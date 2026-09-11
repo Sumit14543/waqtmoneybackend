@@ -336,10 +336,7 @@ export const updateApplication = async (id, data) => {
     ["completed_at", "DATETIME NULL"],
   ]);
 
-  const empVal = data.employment || data.employment_status;
-  if (empVal && String(empVal).toLowerCase() !== "salaried") {
-    throw badRequest("We currently provide payday loans exclusively to salaried individuals. Self-employed applicants are not eligible at this time.");
-  }
+
 
   if (
     Object.prototype.hasOwnProperty.call(data, "uan_number") ||
@@ -842,13 +839,9 @@ export const createApplication = async (data) => {
     throw badRequest(`Missing required fields: ${missingFields.join(", ")}`);
   }
 
-  if (String(employment).toLowerCase() !== "salaried") {
-    throw badRequest("We currently provide payday loans exclusively to salaried individuals. Self-employed applicants are not eligible at this time.");
-  }
-
   const salaryNum = Number(String(salary).replace(/\D/g, ""));
-  if (Number.isNaN(salaryNum) || salaryNum < 25000) {
-    throw badRequest("Monthly salary must be at least ₹25,000.");
+  if (Number.isNaN(salaryNum) || salaryNum <= 0) {
+    throw badRequest("Please enter a valid monthly salary.");
   }
 
   if (!termsAccepted) {
