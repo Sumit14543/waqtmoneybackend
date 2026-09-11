@@ -5,7 +5,7 @@ const smtpHost = (process.env.SMTP_HOST || "localhost").trim();
 const smtpUser = (process.env.SMTP_USER || process.env.SMTP_USERNAME || "sanction@waqtmoney.com").trim();
 const smtpPass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "Waqt@@825792##").trim();
 const smtpPort = Number.parseInt(process.env.SMTP_PORT || "8081", 10);
-const smtpSecure = (process.env.SMTP_SECURE || "true").trim().toLowerCase();
+const smtpSecure = (process.env.SMTP_SECURE || "").trim().toLowerCase();
 const smtpTlsServername = process.env.SMTP_TLS_SERVERNAME?.trim() || smtpHost;
 const smtpAddressFamily = Number.parseInt(process.env.SMTP_ADDRESS_FAMILY || "0", 10);
 const rejectUnauthorized = process.env.SMTP_REJECT_UNAUTHORIZED === "true";
@@ -16,10 +16,14 @@ if (!smtpHost || !smtpUser || !smtpPass || Number.isNaN(smtpPort)) {
   );
 }
 
+// secure is ONLY true for implicit SSL (port 465 or explicit 'ssl').
+// For ports like 8081, 587, 25, secure MUST be false to avoid OpenSSL 'packet length too long' errors.
+const isImplicitSsl = smtpPort === 465 || smtpSecure === "ssl";
+
 const transporter = nodemailer.createTransport({
   host: smtpHost,
   port: smtpPort,
-  secure: smtpSecure === "ssl" || smtpSecure === "true" || smtpPort === 465,
+  secure: isImplicitSsl,
   auth: {
     user: smtpUser,
     pass: smtpPass,
