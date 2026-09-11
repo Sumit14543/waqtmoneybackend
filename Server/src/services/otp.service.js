@@ -1,4 +1,4 @@
-import transporter from "../configs/mailer.js";
+import transporter, { sendMailWithFallback } from "../configs/mailer.js";
 import logger from "../utils/logger.js";
 
 const otpStore = {};
@@ -172,8 +172,10 @@ const sendEmailOtp = async (email, otp) => {
 
   logger.info("Email OTP request started");
 
+  const sendFn = sendMailWithFallback || transporter.sendMail.bind(transporter);
+
   const info = await withTimeout(
-    transporter.sendMail({
+    sendFn({
       from: `"${fromName}" <${fromEmail}>`,
       to: normalizedEmail,
       subject: "Your OTP - Waqt Finance",
