@@ -93,7 +93,7 @@ const getApplicationCookieDomain = () => {
 
   return undefined;
 };
-const getApplicationSessionFromRequest = (req, requestedApplicationId = "") => {
+export const getApplicationSessionFromRequest = (req, requestedApplicationId = "") => {
   const cookieTokens = getCookieValues(req, APPLICATION_SESSION_COOKIE);
   const parsedCookieToken = parseCookies(req)[APPLICATION_SESSION_COOKIE];
   const tokens = [...new Set([...cookieTokens, parsedCookieToken].filter(Boolean))];
