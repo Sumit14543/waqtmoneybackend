@@ -166,19 +166,15 @@ export const requireApplicationSession = async (req, res, next) => {
   const uploadSession = verifyApplicationUploadToken(uploadToken, requestedApplicationId);
 
   if (session?.applicationId) {
-    if (!requestedApplicationId || String(session.applicationId) !== requestedApplicationId) {
-      return res.status(403).json({
-        success: false,
-        message: "This application session does not match the request.",
+    const effectiveAppId = requestedApplicationId || session.applicationId;
+    if (String(session.applicationId) === String(effectiveAppId)) {
+      req.applicationSession = session;
+      setApplicationSessionCookie(res, {
+        applicationId: session.applicationId,
+        mobile: session.mobile,
       });
+      return next();
     }
-
-    req.applicationSession = session;
-    setApplicationSessionCookie(res, {
-      applicationId: session.applicationId,
-      mobile: session.mobile,
-    });
-    return next();
   }
 
   if (uploadSession?.applicationId) {
@@ -324,16 +320,15 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
   const uploadSession = verifyApplicationUploadToken(uploadToken, requestedApplicationId);
 
   if (session?.applicationId) {
-    if (!requestedApplicationId || String(session.applicationId) !== requestedApplicationId) {
-      return rejectRecoveredSession(req, res, 403);
+    const effectiveAppId = requestedApplicationId || session.applicationId;
+    if (String(session.applicationId) === String(effectiveAppId)) {
+      req.applicationSession = session;
+      setApplicationSessionCookie(res, {
+        applicationId: session.applicationId,
+        mobile: session.mobile,
+      });
+      return next();
     }
-
-    req.applicationSession = session;
-    setApplicationSessionCookie(res, {
-      applicationId: session.applicationId,
-      mobile: session.mobile,
-    });
-    return next();
   }
 
   if (uploadSession?.applicationId) {

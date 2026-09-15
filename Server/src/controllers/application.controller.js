@@ -4,6 +4,7 @@ import {
   createHeroLead,
   getApplicationById,
   getApplicationUanById,
+  getLatestDraftApplicationByMobile,
   getRepaymentContactByPan,
   updateApplication,
   updateBankDetails,
@@ -32,6 +33,7 @@ import {
   setApplicationSessionCookie,
   createApplicationUploadToken,
   verifyApplicationUploadToken,
+  getApplicationSessionFromRequest,
 } from "../middleware/applicationSession.middleware.js";
 import { parseCookies } from "../utils/cookies.js";
 import logger from "../utils/logger.js";
@@ -140,13 +142,27 @@ const sendRecoveredApplicationSession = (res, application, applicationId) => {
 
 export const recoverApplicationSession = async (req, res, next) => {
   try {
-    const applicationId = String(req.body.applicationId || req.body.id || "").trim();
+    let applicationId = String(req.body.applicationId || req.body.id || "").trim();
     const requestMobile = normalizeSessionMobile(req.body.mobile || req.body.phone);
     const requestEmail = normalizeSessionEmail(req.body.email);
     const requestPan = normalizeSessionPan(req.body.pan || req.body.panNumber || req.body.pan_number);
     const uploadToken = String(
       req.body.applicationUploadToken || req.headers["x-application-upload-token"] || ""
     ).trim();
+
+    // 1. Try recovering applicationId from valid HttpOnly session cookie if body ID is empty
+    const sessionCookie = getApplicationSessionFromRequest(req);
+    if (!applicationId && sessionCookie?.applicationId) {
+      applicationId = String(sessionCookie.applicationId);
+    }
+
+    // 2. Try recovering latest active draft application by mobile number if still empty
+    if (!applicationId && requestMobile) {
+      const draftApp = await getLatestDraftApplicationByMobile(requestMobile).catch(() => null);
+      if (draftApp) {
+        applicationId = String(draftApp.application_id || draftApp.id);
+      }
+    }
 
     if (!applicationId) {
       return res.status(401).json({
@@ -159,6 +175,7 @@ export const recoverApplicationSession = async (req, res, next) => {
 
     if (
       !uploadSession &&
+      !sessionCookie?.applicationId &&
       !hasApplicationContactProof({ mobile: requestMobile, email: requestEmail, pan: requestPan })
     ) {
       return res.status(401).json({
@@ -169,7 +186,7 @@ export const recoverApplicationSession = async (req, res, next) => {
 
     const application = await getApplicationById(applicationId);
 
-    if (application && uploadSession) {
+    if (application && (uploadSession || (sessionCookie?.applicationId && String(sessionCookie.applicationId) === String(applicationId)))) {
       return sendRecoveredApplicationSession(res, application, applicationId);
     }
 

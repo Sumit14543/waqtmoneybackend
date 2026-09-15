@@ -453,6 +453,26 @@ export const getApplicationById = async (id) => {
   return rows[0] || null;
 };
 
+export const getLatestDraftApplicationByMobile = async (mobile) => {
+  const cleanMobile = String(mobile || "").replace(/\D/g, "").slice(-10);
+  if (!cleanMobile) return null;
+
+  await ensureApplicationTable();
+
+  const [rows] = await db.execute(
+    `SELECT *
+     FROM ${APPLICATION_TABLE}
+     WHERE RIGHT(mobile, 10) = ?
+       AND (lead_visible = 0 OR lead_visible IS NULL)
+       AND completed_at IS NULL
+     ORDER BY last_activity_at DESC, submit_at DESC, id DESC
+     LIMIT 1`,
+    [cleanMobile]
+  );
+
+  return rows[0] || null;
+};
+
 export const getRepaymentContactByPan = async (pan) => {
   const normalizedPan = String(pan || "").trim().toUpperCase();
 

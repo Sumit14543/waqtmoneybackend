@@ -6,6 +6,7 @@ import {
   LOCAL_WEB_ORIGINS,
 } from "../configs/integrations.js";
 import { checkActiveApplicationInCRM } from "../services/crm.service.js";
+import { setApplicationSessionCookie } from "../middleware/applicationSession.middleware.js";
 import logger from "../utils/logger.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
@@ -514,7 +515,7 @@ export const handleReactAadhaarCallback = async (req, res) => {
     let rows = [];
 
     [rows] = await db.execute(
-        `SELECT id, aadhaar_masked, aadhaar_unique_id, aadhaar_reference_id
+        `SELECT id, application_id, mobile, email, aadhaar_masked, aadhaar_unique_id, aadhaar_reference_id
          FROM ${APPLICATION_TABLE}
          WHERE aadhaar_unique_id IN (?, ?)
             OR aadhaar_reference_id IN (?, ?)
@@ -542,7 +543,21 @@ export const handleReactAadhaarCallback = async (req, res) => {
     const details = detailsResponse?.data || detailsResponse;
 
     await markAadhaarVerified(application, details);
-    return res.redirect(`${CLIENT_BASE_URL}${getSuccessRedirectPath(req)}?aadhaar=verified`);
+
+    const appId = String(application.application_id || application.id || "");
+    if (appId) {
+      setApplicationSessionCookie(res, {
+        applicationId: appId,
+        mobile: application.mobile || "",
+      });
+    }
+
+    const redirectAppId = encodeURIComponent(appId);
+    return res.redirect(
+      `${CLIENT_BASE_URL}${getSuccessRedirectPath(req)}?aadhaar=verified${
+        redirectAppId ? `&applicationId=${redirectAppId}` : ""
+      }`
+    );
   } catch (error) {
     logger.error("React Aadhaar callback error:", error);
     return redirectAadhaarFailure(req, res, error.message || "callback_exception");
