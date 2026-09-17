@@ -116,7 +116,11 @@ const rateLimitBuckets = new Map();
 const createRateLimiter = ({ windowMs, max, message }) => (req, res, next) => {
   const now = Date.now();
   const identity = req.ip || req.socket?.remoteAddress || "unknown";
-  const key = `${identity}:${req.method}:${req.baseUrl}${req.path}`;
+  // Normalize path: strip optional /api prefix and trailing slashes so /api/foo and /foo share the same bucket
+  const cleanPath = (req.baseUrl + req.path)
+    .replace(/^\/api\b/, "")
+    .replace(/\/+$/, "") || "/";
+  const key = `${identity}:${req.method}:${cleanPath}`;
   const current = rateLimitBuckets.get(key);
 
   if (!current || current.resetAt <= now) {
@@ -161,6 +165,11 @@ const paymentLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: isProduction ? 30 : 300,
   message: "Too many payment requests. Please try again after a few minutes.",
+});
+const formUploadLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: isProduction ? 15 : 300,
+  message: "Too many requests. Please try again after a few minutes.",
 });
 
 app.use((req, res, next) => {
@@ -216,29 +225,71 @@ app.get("/api/health", (req, res) => {
   res.json({ success: true, status: "ok", version: "v2" });
 });
 
+// Sensitive Rate Limits (Authentication, OTP, Admin Auth, Session Recovery, PAN, Aadhaar)
 app.use(
   [
     "/api/application/repayment/send-otp",
+    "/application/repayment/send-otp",
     "/api/application/repayment/verify-otp",
+    "/application/repayment/verify-otp",
+    "/api/application/recover-session",
+    "/application/recover-session",
     "/api/otp/send-otp",
+    "/otp/send-otp",
     "/api/otp/verify-otp",
+    "/otp/verify-otp",
     "/api/auth/signup",
+    "/auth/signup",
     "/api/auth/login",
+    "/auth/login",
     "/api/auth/send-login-otp",
+    "/auth/send-login-otp",
     "/api/auth/verify-login-otp",
+    "/auth/verify-login-otp",
     "/api/auth/repayment-session",
+    "/auth/repayment-session",
+    "/api/admin/login",
+    "/admin/login",
+    "/api/admin/send-otp",
+    "/admin/send-otp",
+    "/api/admin/verify-otp",
+    "/admin/verify-otp",
     "/api/pan/verify",
+    "/pan/verify",
     "/api/aadhaar",
+    "/aadhaar",
     "/api/react-aadhaar",
+    "/react-aadhaar",
   ],
   sensitiveLimiter,
 );
+
+// Payment Operations Limiter
 app.use(
   [
     "/api/application/repayment/create-payment-order",
+    "/application/repayment/create-payment-order",
     "/api/application/repayment/payment-status",
+    "/application/repayment/payment-status",
   ],
   paymentLimiter,
+);
+
+// Form Submission & File Upload Throttling
+app.use(
+  [
+    "/api/application/lead",
+    "/application/lead",
+    "/api/application/contact",
+    "/application/contact",
+    "/api/application/upload-docs",
+    "/application/upload-docs",
+    "/api/application/upload-video-kyc",
+    "/application/upload-video-kyc",
+    "/api/email/validate-official",
+    "/email/validate-official",
+  ],
+  formUploadLimiter,
 );
 
 app.use(["/api/loan", "/loan"], loanRoutes);
