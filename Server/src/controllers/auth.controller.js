@@ -429,9 +429,6 @@ const getCrmDisbursalDate = (crmStatus = {}) =>
   crmStatus.disbursement?.disbursedAt ||
   crmStatus.disbursement?.disbursalDate ||
   crmStatus.disbursement?.disbursementDate ||
-  crmStatus.sanction?.disbursedAt ||
-  crmStatus.sanction?.disbursalDate ||
-  crmStatus.sanction?.disbursementDate ||
   crmStatus.disbursedAt ||
   crmStatus.disbursalDate ||
   crmStatus.disbursementDate ||
@@ -455,7 +452,6 @@ const getDashboardCrmStageKey = (crmStatus = {}) => {
     .join(" ")
     .toLowerCase();
   const disbursedAmount = firstPositiveNumber(
-    crmStatus.sanction?.disbursedAmount,
     crmStatus.disbursement?.disbursedAmount,
     crmStatus.disbursedAmount
   );
@@ -671,7 +667,6 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     dashboardCrmStatus?.dashboardCurrentStageKey === "loan_disbursed" ||
     dashboardCrmStatus?.dashboardCurrentStageKey === "repayment_received" ||
     firstPositiveNumber(
-      crmStatus?.sanction?.disbursedAmount,
       crmStatus?.disbursement?.disbursedAmount,
       crmStatus?.disbursedAmount
     ) > 0;
@@ -865,7 +860,7 @@ const toDashboardLoan = (loan, crmStatus = null) => {
     interestAccrued,
     disbursalDate: isDisbursed ? (getCrmDisbursalDate(crmStatus) || loan.disbursal_date || "") : "",
     agreementNumber: disbursement.agreementNumber || sanction.agreementNumber || "",
-    disbursedAmount: isDisbursed ? firstPositiveNumber(disbursement.disbursedAmount, sanction.disbursedAmount, crmStatus?.disbursedAmount) : 0,
+    disbursedAmount: isDisbursed ? firstPositiveNumber(disbursement.disbursedAmount, crmStatus?.disbursedAmount) : 0,
     disbursementStatus: isDisbursed ? (disbursement.status || "disbursed") : "",
     crmRepaymentDetails: null,
     crmStatus: dashboardCrmStatus,

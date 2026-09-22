@@ -290,8 +290,6 @@ const hasDisbursedStatus = (crmStatus = {}) => {
   const disbursedAmount = firstNumber(
     crmStatus?.disbursement?.disbursedAmount,
     crmStatus?.disbursement?.disbursed_amount,
-    crmStatus?.sanction?.disbursedAmount,
-    crmStatus?.sanction?.disbursed_amount,
     crmStatus?.disbursedAmount,
     crmStatus?.disbursed_amount,
     crmStatus?.disbursementAmount,
@@ -394,12 +392,10 @@ export const buildRepaymentApplicationFromCRM = (identifier, _summary, crmStatus
       firstNumber(
         crmStatus.disbursement?.disbursedAmount,
         crmStatus.disbursement?.disbursed_amount,
-        crmStatus.sanction?.disbursedAmount,
-        crmStatus.sanction?.disbursed_amount,
         crmStatus.disbursedAmount,
         crmStatus.disbursed_amount
       ) || undefined,
-    disbursal_date: crmStatus.disbursement?.disbursedAt || crmStatus.disbursement?.disbursalDate || crmStatus.disbursement?.disbursementDate || crmStatus.sanction?.disbursedAt || "",
+    disbursal_date: crmStatus.disbursement?.disbursedAt || crmStatus.disbursement?.disbursalDate || crmStatus.disbursement?.disbursementDate || "",
     maturity_amount: totalAmount || undefined,
     total_repayable_amount: totalAmount || undefined,
     outstanding_amount: balanceAmount,
