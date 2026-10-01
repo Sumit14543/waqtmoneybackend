@@ -360,13 +360,34 @@ if (process.env.BYPASS_DB === "true") {
         )
       `);
 
-      // Ensure status and read_time columns exist on existing table
+      // Ensure status, read_time, and faq_schema columns exist on existing table
       try {
         await connection.execute("ALTER TABLE waqt_money_blogs ADD COLUMN status VARCHAR(20) DEFAULT 'ACTIVE'");
       } catch (e) {}
       try {
         await connection.execute("ALTER TABLE waqt_money_blogs ADD COLUMN read_time VARCHAR(50) DEFAULT '5 Min Read'");
       } catch (e) {}
+      try {
+        await connection.execute("ALTER TABLE waqt_money_blogs ADD COLUMN faq_schema LONGTEXT NULL");
+      } catch (e) {}
+
+      // Create webpages metadata table
+      await connection.execute(`
+        CREATE TABLE IF NOT EXISTS waqt_money_webpages_meta (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          page_path VARCHAR(150) NOT NULL UNIQUE,
+          page_name VARCHAR(150) NOT NULL,
+          meta_title VARCHAR(255) NULL,
+          meta_description TEXT NULL,
+          meta_keywords VARCHAR(255) NULL,
+          canonical_url VARCHAR(255) NULL,
+          og_image VARCHAR(255) NULL,
+          robots VARCHAR(50) DEFAULT 'index, follow',
+          faq_schema LONGTEXT NULL,
+          custom_schema LONGTEXT NULL,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+      `);
 
       // Only seed default blogs if table is empty
       const [[countRes]] = await connection.execute("SELECT COUNT(*) AS total FROM waqt_money_blogs");

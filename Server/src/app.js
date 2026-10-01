@@ -14,6 +14,7 @@ import locationRoutes from "./routes/location.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import blogRoutes from "./routes/blog.routes.js";
 import emailValidationRoutes from "./routes/emailValidation.routes.js";
+import webpagesMetaRoutes from "./routes/webpagesMeta.routes.js";
 import {
   LOCAL_WEB_ORIGINS,
   PRODUCTION_WEB_ORIGINS,
@@ -303,6 +304,7 @@ app.use(["/api/location", "/location"], locationRoutes);
 app.use(["/api/admin", "/admin"], adminRoutes);
 app.use(["/api/blogs", "/blogs", "/api/blog", "/blog"], blogRoutes);
 app.use(["/api/email", "/email"], emailValidationRoutes);
+app.use(["/api/webpages-meta", "/webpages-meta"], webpagesMetaRoutes);
 
 app.use(errorHandler);
 
