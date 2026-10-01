@@ -12,8 +12,7 @@ export const getBlogs = async (req, res) => {
       ...b,
       readTime: b.read_time || b.readTime || "5 Min Read",
       status: b.status || "ACTIVE",
-      image: b.image ? b.image : "/blog-assets/blog-1-personal-loan-guide.webp",
-      faq_schema: b.faq_schema || null
+      image: b.image ? b.image : "/blog-assets/blog-1-personal-loan-guide.webp"
     }));
     return res.status(200).json({
       success: true,
@@ -50,8 +49,7 @@ export const getBlogBySlug = async (req, res) => {
       ...rows[0],
       readTime: rows[0].read_time || rows[0].readTime || "5 Min Read",
       status: rows[0].status || "ACTIVE",
-      image: rows[0].image ? rows[0].image : "/blog-assets/blog-1-personal-loan-guide.webp",
-      faq_schema: rows[0].faq_schema || null
+      image: rows[0].image ? rows[0].image : "/blog-assets/blog-1-personal-loan-guide.webp"
     };
 
     return res.status(200).json({
@@ -73,7 +71,7 @@ export const getBlogBySlug = async (req, res) => {
 
 export const createBlog = async (req, res) => {
   try {
-    const { title, slug, category, author, excerpt, content, readTime, status, faq_schema, faqSchema } = req.body;
+    const { title, slug, category, author, excerpt, content, readTime, status } = req.body;
     
     if (!title || !slug || !excerpt || !content) {
       return res.status(400).json({
@@ -86,12 +84,10 @@ export const createBlog = async (req, res) => {
     const image = req.file ? `/uploads/${req.file.filename}` : "/blog-assets/blog-1-personal-loan-guide.webp";
     const blogStatus = status || "ACTIVE";
     const read = readTime || `${Math.max(1, Math.ceil(content.split(/\s+/).length / 200))} Min Read`;
-    const rawFaq = faq_schema || faqSchema;
-    const finalFaqSchema = rawFaq ? (typeof rawFaq === "object" ? JSON.stringify(rawFaq) : String(rawFaq)) : null;
 
     try {
       const [result] = await db.query(
-        "INSERT INTO waqt_money_blogs (slug, title, excerpt, content, image, author, category, status, read_time, faq_schema) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO waqt_money_blogs (slug, title, excerpt, content, image, author, category, status, read_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           cleanSlug,
           title,
@@ -102,7 +98,6 @@ export const createBlog = async (req, res) => {
           category || "Personal Loan",
           blogStatus,
           read,
-          finalFaqSchema
         ]
       );
 
@@ -117,7 +112,6 @@ export const createBlog = async (req, res) => {
         category: category || "Personal Loan",
         readTime: read,
         status: blogStatus,
-        faq_schema: finalFaqSchema,
         created_at: new Date().toISOString()
       };
       localBlogs.unshift(newBlog);
@@ -140,7 +134,6 @@ export const createBlog = async (req, res) => {
         category: category || "Personal Loan",
         readTime: read,
         status: blogStatus,
-        faq_schema: finalFaqSchema,
         created_at: new Date().toISOString()
       };
       localBlogs.unshift(newBlog);
@@ -164,12 +157,10 @@ export const createBlog = async (req, res) => {
 export const updateBlog = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, slug, category, author, excerpt, content, readTime, status, faq_schema, faqSchema } = req.body;
+    const { title, slug, category, author, excerpt, content, readTime, status } = req.body;
 
     const image = req.file ? `/uploads/${req.file.filename}` : undefined;
     const cleanSlug = slug ? slug.toLowerCase().trim().replace(/[^a-z0-9-]/g, "-") : undefined;
-    const rawFaq = faq_schema !== undefined ? faq_schema : faqSchema;
-    const finalFaqSchema = rawFaq !== undefined ? (typeof rawFaq === "object" ? JSON.stringify(rawFaq) : String(rawFaq)) : undefined;
 
     // Update in local memory
     const locIdx = localBlogs.findIndex((b) => String(b.id) === String(id));
@@ -185,7 +176,6 @@ export const updateBlog = async (req, res) => {
         ...(readTime && { readTime }),
         ...(status && { status }),
         ...(image && { image }),
-        ...(finalFaqSchema !== undefined && { faq_schema: finalFaqSchema }),
       };
     }
 
@@ -211,11 +201,6 @@ export const updateBlog = async (req, res) => {
         if (image !== undefined) {
           fields.push("image = ?");
           params.push(image);
-        }
-
-        if (finalFaqSchema !== undefined) {
-          fields.push("faq_schema = ?");
-          params.push(finalFaqSchema);
         }
 
         params.push(id);
