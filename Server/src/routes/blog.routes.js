@@ -31,13 +31,13 @@ const upload = multer({
   storage,
   limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB max
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|webp|svg/;
+    const allowedTypes = /jpeg|jpg|png|webp/;
     const ext = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mime = allowedTypes.test(file.mimetype);
     if (ext && mime) {
       cb(null, true);
     } else {
-      cb(new Error("Only JPEGs, PNGs, WebPs, or SVGs are allowed"));
+      cb(new Error("Only JPEGs, PNGs, or WebPs are allowed"));
     }
   },
 });

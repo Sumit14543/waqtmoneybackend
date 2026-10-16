@@ -2,12 +2,12 @@ import "./env.js";
 import nodemailer from "nodemailer";
 
 const smtpHost = (process.env.SMTP_HOST || "localhost").trim();
-const smtpUser = (process.env.SMTP_USER || process.env.SMTP_USERNAME || "sanction@waqtmoney.com").trim();
-const smtpPass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "Waqt@@825792##").trim().replace(/^"|"$/g, "");
+const smtpUser = (process.env.SMTP_USER || process.env.SMTP_USERNAME || "").trim();
+const smtpPass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim().replace(/^"|"$/g, "");
 const rawPort = Number.parseInt(process.env.SMTP_PORT || "465", 10);
 const expressPort = Number.parseInt(process.env.PORT || "5000", 10);
 const smtpSecure = (process.env.SMTP_SECURE || "true").trim().toLowerCase();
-const smtpTlsServername = process.env.SMTP_TLS_SERVERNAME?.trim() || smtpHost;
+const smtpTlsServername = process.env.SMTP_TLS_SERVERNAME?.trim() || (/^(127\.|localhost)/i.test(smtpHost) ? undefined : smtpHost);
 const smtpAddressFamily = Number.parseInt(process.env.SMTP_ADDRESS_FAMILY || "0", 10);
 const rejectUnauthorized = process.env.SMTP_REJECT_UNAUTHORIZED === "true";
 
@@ -34,15 +34,15 @@ const createTransporterForPort = (port) => {
       pass: smtpPass,
     },
     tls: {
-      servername: smtpTlsServername,
+      ...(smtpTlsServername ? { servername: smtpTlsServername } : {}),
       rejectUnauthorized: rejectUnauthorized,
     },
     ...(smtpAddressFamily === 4 || smtpAddressFamily === 6
       ? { family: smtpAddressFamily }
       : {}),
-    connectionTimeout: 6000,
-    greetingTimeout: 6000,
-    socketTimeout: 10000,
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 8000,
   });
 };
 

@@ -23,6 +23,19 @@ test("decryptAadhaarNumber decrypts encrypted aadhaar correctly", () => {
   assert.equal(decrypted, plainAadhaar);
 });
 
+test("decryptAadhaarNumber decrypts random IV encrypted aadhaar correctly", () => {
+  const plainAadhaar = "555566667777";
+  const secret = getAppSecret();
+  const key = crypto.createHash("sha256").update(secret).digest();
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
+  const encrypted = Buffer.concat([cipher.update(plainAadhaar, "utf8"), cipher.final()]);
+  const formatted = `${iv.toString("hex")}:${encrypted.toString("base64")}`;
+
+  const decrypted = decryptAadhaarNumber(formatted);
+  assert.equal(decrypted, plainAadhaar);
+});
+
 test("decryptAadhaarNumber passes through plain 12-digit aadhaar numbers", () => {
   const plainAadhaar = "987654321012";
   const result = decryptAadhaarNumber(plainAadhaar);

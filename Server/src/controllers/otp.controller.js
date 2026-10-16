@@ -1,6 +1,6 @@
 import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
 import { getApplicationById } from "../services/application.service.js";
-import { createApplicationUploadToken } from "../middleware/applicationSession.middleware.js";
+import { createApplicationUploadToken, setApplicationSessionCookie } from "../middleware/applicationSession.middleware.js";
 
 export const sendOTP = async (req, res, next) => {
   const { email, phone } = req.body;
@@ -62,8 +62,13 @@ export const verifyOTP = async (req, res, next) => {
           normalizeEmail(email) === normalizeEmail(application.email);
 
         if (application && (mobileMatches || emailMatches)) {
+          const effectiveAppId = application.application_id || requestedApplicationId;
           response.applicationUploadToken = createApplicationUploadToken({
-            applicationId: application.application_id || requestedApplicationId,
+            applicationId: effectiveAppId,
+          });
+          setApplicationSessionCookie(res, {
+            applicationId: effectiveAppId,
+            mobile: application.mobile || phone,
           });
         }
       } catch (error) {

@@ -41,8 +41,8 @@ const isAllowedCorsOrigin = (origin) => {
   if (!normalizedOrigin) return true;
   if (allowedOrigins.includes(normalizedOrigin)) return true;
 
-  // Match any waqtmoney.com domain/subdomain over HTTP or HTTPS
-  if (/^https?:\/\/(?:[a-zA-Z0-9-]+\.)*waqtmoney\.com(?::\d+)?$/i.test(normalizedOrigin)) {
+  // Match any waqtmoney.com, waqtfinance.com, waqtmoney.in domain/subdomain
+  if (/^https?:\/\/(?:[a-zA-Z0-9-]+\.)*(?:waqtmoney\.com|waqtfinance\.com|waqtmoney\.in)(?::\d+)?$/i.test(normalizedOrigin)) {
     return true;
   }
 
@@ -51,20 +51,18 @@ const isAllowedCorsOrigin = (origin) => {
     return true;
   }
 
-  return true; // Fallback: allow request origin to prevent browser CORS block
+  return false;
 };
 
 const applyCorsHeaders = (req, res) => {
   const origin = String(req.headers.origin || "").trim().replace(/\/$/, "");
 
-  if (origin) {
+  if (origin && isAllowedCorsOrigin(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
-  } else {
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
 
-  res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
@@ -76,7 +74,11 @@ const applyCorsHeaders = (req, res) => {
 const corsOptions = {
   optionsSuccessStatus: 204,
   origin(origin, callback) {
-    callback(null, true);
+    if (!origin || isAllowedCorsOrigin(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS policy violation: Origin not allowed"), false);
+    }
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

@@ -8,6 +8,7 @@ import {
   requireApplicationSession,
   requireApplicationSessionOrMatchingContact,
 } from "../middleware/applicationSession.middleware.js";
+import { verifyAdminToken } from "../middleware/admin.middleware.js";
 import {
   applyLoan,
   createRepaymentPaymentOrder,
@@ -130,7 +131,7 @@ const fallbackDocumentColumns = [
 ];
 
 router.post("/apply", applyLoan);
-router.get("/admin/resync-aadhaar", resyncAadhaarLeads);
+router.get("/admin/resync-aadhaar", verifyAdminToken, resyncAadhaarLeads);
 router.post("/lead", saveHeroLead);
 router.post("/contact", saveContactQuery);
 router.post("/repayment/send-otp", sendRepaymentOtp);

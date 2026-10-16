@@ -190,18 +190,10 @@ export const recoverApplicationSession = async (req, res, next) => {
       return sendRecoveredApplicationSession(res, application, applicationId);
     }
 
-    if (!application || !applicationContactMatches(application, {
-      mobile: requestMobile,
-      email: requestEmail,
-      pan: requestPan,
-    })) {
-      return res.status(401).json({
-        success: false,
-        message: "Application session expired. Please start again.",
-      });
-    }
-
-    return sendRecoveredApplicationSession(res, application, applicationId);
+    return res.status(401).json({
+      success: false,
+      message: "Application session expired. Please verify OTP to continue.",
+    });
   } catch (err) {
     next(err);
   }
@@ -209,10 +201,21 @@ export const recoverApplicationSession = async (req, res, next) => {
 
 export const updateApp = async (req, res, next) => {
   try {
-    const { id, ...data } = req.body;
+    const sessionAppId = req.applicationSession?.applicationId;
+    const { id, applicationId: bodyAppId, ...data } = req.body;
+    const requestedId = String(id || bodyAppId || "").trim();
 
-    if (id && data.current_step === "video_kyc_completed") {
-      const application = await getApplicationById(id);
+    if (sessionAppId && requestedId && requestedId !== String(sessionAppId)) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You are not authorized to modify this application",
+      });
+    }
+
+    const effectiveId = sessionAppId || requestedId;
+
+    if (effectiveId && data.current_step === "video_kyc_completed") {
+      const application = await getApplicationById(effectiveId);
       if (!application) {
         const error = new Error("Application not found");
         error.statusCode = 400;
@@ -242,7 +245,7 @@ export const updateApp = async (req, res, next) => {
     }
 
     try {
-      await updateApplication(id, data);
+      await updateApplication(effectiveId, data);
     } catch (updateErr) {
       if (data.current_step === "video_kyc_completed") {
         logger.warn("Non-fatal updateApplication warning during video_kyc_completed:", updateErr?.message || updateErr);
@@ -251,8 +254,8 @@ export const updateApp = async (req, res, next) => {
       }
     }
 
-    if (id && process.env.UAN_LOOKUP_BACKGROUND_ON_UPDATE === "true") {
-      setTimeout(() => getApplicationUanById(id).catch((error) => {
+    if (effectiveId && process.env.UAN_LOOKUP_BACKGROUND_ON_UPDATE === "true") {
+      setTimeout(() => getApplicationUanById(effectiveId).catch((error) => {
         logger.error("Background UAN sync error:", error.message);
       }), 0);
     }
@@ -1571,8 +1574,18 @@ export const getRepaymentPaymentStatus = async (req, res, next) => {
 
 export const updateWorkDetailsApp = async (req, res, next) => {
   try {
+    const sessionAppId = req.applicationSession?.applicationId;
     const { id, applicationId, ...data } = req.body;
-    await updateWorkDetails(id || applicationId, data);
+    const requestedId = String(id || applicationId || "").trim();
+
+    if (sessionAppId && requestedId && requestedId !== String(sessionAppId)) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You are not authorized to modify this application",
+      });
+    }
+
+    await updateWorkDetails(sessionAppId || requestedId, data);
 
     res.status(200).json({
       success: true,
@@ -1602,8 +1615,18 @@ export const getIfscDetails = async (req, res, next) => {
 
 export const updateBankDetailsApp = async (req, res, next) => {
   try {
+    const sessionAppId = req.applicationSession?.applicationId;
     const { id, applicationId, ...data } = req.body;
-    await updateBankDetails(id || applicationId, data);
+    const requestedId = String(id || applicationId || "").trim();
+
+    if (sessionAppId && requestedId && requestedId !== String(sessionAppId)) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You are not authorized to modify this application",
+      });
+    }
+
+    await updateBankDetails(sessionAppId || requestedId, data);
 
     res.status(200).json({
       success: true,
@@ -1619,8 +1642,18 @@ export const updateBankDetailsApp = async (req, res, next) => {
 
 export const updateReferenceDetailsApp = async (req, res, next) => {
   try {
+    const sessionAppId = req.applicationSession?.applicationId;
     const { id, applicationId, ...data } = req.body;
-    await updateReferenceDetails(id || applicationId, data);
+    const requestedId = String(id || applicationId || "").trim();
+
+    if (sessionAppId && requestedId && requestedId !== String(sessionAppId)) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You are not authorized to modify this application",
+      });
+    }
+
+    await updateReferenceDetails(sessionAppId || requestedId, data);
 
     res.status(200).json({
       success: true,
@@ -1637,9 +1670,9 @@ export const updateReferenceDetailsApp = async (req, res, next) => {
 export const resyncAadhaarLeads = async (req, res, next) => {
   try {
     const { secret } = req.query;
-    const expectedSecret = process.env.JWT_SECRET || "waqt@2026";
-    if (secret !== expectedSecret && secret !== "waqt@2026") {
-      return res.status(403).json({ success: false, message: "Forbidden" });
+    const expectedSecret = process.env.JWT_SECRET;
+    if (!expectedSecret || secret !== expectedSecret) {
+      return res.status(403).json({ success: false, message: "Forbidden: Invalid authorization secret" });
     }
 
     const [rows] = await db.execute(

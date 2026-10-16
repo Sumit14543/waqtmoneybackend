@@ -33,10 +33,22 @@ export const decryptAadhaarNumber = (value) => {
   try {
     const secret = getAppSecret();
     const key = crypto.createHash("sha256").update(secret).digest();
-    const iv = crypto.createHash("sha256").update(secret).digest("hex").slice(0, 16);
+
+    let iv;
+    let cipherBuffer;
+
+    if (encrypted.includes(":")) {
+      const [ivHex, cipherBase64] = encrypted.split(":");
+      iv = Buffer.from(ivHex, "hex");
+      cipherBuffer = Buffer.from(cipherBase64, "base64");
+    } else {
+      iv = crypto.createHash("sha256").update(secret).digest("hex").slice(0, 16);
+      cipherBuffer = Buffer.from(encrypted, "base64");
+    }
+
     const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
     const decrypted = Buffer.concat([
-      decipher.update(Buffer.from(encrypted, "base64")),
+      decipher.update(cipherBuffer),
       decipher.final(),
     ]).toString("utf8");
     const decryptedDigits = onlyDigits(decrypted);

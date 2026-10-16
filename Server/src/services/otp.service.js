@@ -8,7 +8,7 @@ const OTP_TTL_MS = 60 * 1000;
 const MAX_ACTIVE_OTPS_PER_KEY = 5;
 const MAX_ATTEMPTS = 5;
 const BLOCK_DURATION_MS = 15 * 60 * 1000;
-const MAIL_TIMEOUT_MS = Number.parseInt(process.env.OTP_MAIL_TIMEOUT_MS || "8000", 10);
+const MAIL_TIMEOUT_MS = Number.parseInt(process.env.OTP_MAIL_TIMEOUT_MS || "15000", 10);
 const WHATSAPP_TIMEOUT_MS = Number.parseInt(process.env.OTP_WHATSAPP_TIMEOUT_MS || "8000", 10);
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
@@ -35,10 +35,14 @@ const isSmtpConfigured = () => {
   return Boolean(host && user && pass);
 };
 
-const isLocalOtpDebugEnabled = () =>
-  process.env.NODE_ENV !== "production" ||
-  String(process.env.CLIENT_BASE_URL || "").includes("localhost") ||
-  String(process.env.API_PUBLIC_BASE_URL || "").includes("localhost");
+const isLocalOtpDebugEnabled = () => {
+  const isProd = process.env.NODE_ENV === "production" || process.env.APP_ENV === "production";
+  if (isProd) return false;
+  return (
+    String(process.env.CLIENT_BASE_URL || "").includes("localhost") ||
+    String(process.env.API_PUBLIC_BASE_URL || "").includes("localhost")
+  );
+};
 
 const getOtpKey = ({ phone, email }) => {
   const normalizedPhone = normalizePhone(phone);

@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import db from "../configs/db.js";
 import { getJwtSecret } from "../configs/secrets.js";
 import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
@@ -19,16 +20,27 @@ const isAllowedAdminDomain = (email) => {
 };
 
 const getAdminUsers = () => {
-  return [
-    {
-      email: (process.env.ADMIN_USER_1_EMAIL || "shivani@waqtfinance.com").trim().toLowerCase(),
-      pass: (process.env.ADMIN_USER_1_PASS || "Waqt@shivani@#2016##").trim(),
-    },
-    {
-      email: (process.env.ADMIN_USER_2_EMAIL || "support@waqtmoney.in").trim().toLowerCase(),
-      pass: (process.env.ADMIN_USER_2_PASS || "WaqtSupport@2026##").trim(),
-    },
-  ];
+  const users = [];
+
+  const admin1Email = (process.env.ADMIN_USER_1_EMAIL || "").trim().toLowerCase();
+  const admin1Pass = (process.env.ADMIN_USER_1_PASS || "").trim();
+  if (admin1Email && admin1Pass) {
+    users.push({ email: admin1Email, pass: admin1Pass });
+  }
+
+  const admin2Email = (process.env.ADMIN_USER_2_EMAIL || "").trim().toLowerCase();
+  const admin2Pass = (process.env.ADMIN_USER_2_PASS || "").trim();
+  if (admin2Email && admin2Pass) {
+    users.push({ email: admin2Email, pass: admin2Pass });
+  }
+
+  const defaultAdminUser = (process.env.ADMIN_USER || "").trim().toLowerCase();
+  const defaultAdminHash = (process.env.ADMIN_HASHED_PASS || "").trim();
+  if (defaultAdminUser && defaultAdminHash) {
+    users.push({ email: defaultAdminUser, pass: defaultAdminHash });
+  }
+
+  return users;
 };
 
 const verifyAdminAccount = (email, password) => {
@@ -46,7 +58,24 @@ const verifyAdminAccount = (email, password) => {
     return { valid: false, reason: "Unauthorized admin email address." };
   }
 
-  if (matchedUser.pass !== cleanPass) {
+  let isMatch = false;
+  if (
+    matchedUser.pass.startsWith("$2a$") ||
+    matchedUser.pass.startsWith("$2b$") ||
+    matchedUser.pass.startsWith("$2y$")
+  ) {
+    try {
+      isMatch = bcrypt.compareSync(cleanPass, matchedUser.pass);
+    } catch {
+      isMatch = false;
+    }
+  } else {
+    const bufA = Buffer.from(cleanPass);
+    const bufB = Buffer.from(matchedUser.pass);
+    isMatch = bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+  }
+
+  if (!isMatch) {
     return { valid: false, reason: "Invalid administrator password." };
   }
 

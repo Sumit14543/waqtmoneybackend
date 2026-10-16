@@ -56,11 +56,11 @@ const encryptData = (value) => {
   }
 
   const key = crypto.createHash("sha256").update(secret).digest();
-  const iv = crypto.createHash("sha256").update(secret).digest("hex").slice(0, 16);
+  const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
 
-  return encrypted.toString("base64");
+  return `${iv.toString("hex")}:${encrypted.toString("base64")}`;
 };
 
 const ensureApplicationColumns = async () => {

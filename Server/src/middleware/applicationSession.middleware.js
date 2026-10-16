@@ -189,71 +189,11 @@ export const requireApplicationSession = async (req, res, next) => {
     return next();
   }
 
-  if (!requestedApplicationId) {
-    return res.status(401).json({
-      success: false,
-      message: "Application session expired. Please start again.",
-    });
-  }
+  return res.status(401).json({
+    success: false,
+    message: "Application session expired. Please verify OTP to continue.",
+  });
 
-  const requestMobile = normalizeMobile(
-    getHeaderValue(req, "x-application-mobile") || req.body?.applicationMobile
-  );
-  const requestEmail = normalizeEmail(
-    getHeaderValue(req, "x-application-email") || req.body?.applicationEmail
-  );
-  const requestPan = normalizePan(
-    getHeaderValue(req, "x-application-pan") || req.body?.applicationPan
-  );
-
-  if (!hasApplicationContactProof({ mobile: requestMobile, email: requestEmail, pan: requestPan })) {
-    return res.status(401).json({
-      success: false,
-      message: "Application session expired. Please start again.",
-    });
-  }
-
-  try {
-    const application = await getApplicationById(requestedApplicationId);
-    const applicationMobile = normalizeMobile(application?.mobile);
-    const applicationEmail = normalizeEmail(application?.email);
-    const applicationPan = normalizePan(application?.pan_number);
-    const mobileMatches = requestMobile && applicationMobile && requestMobile === applicationMobile;
-    const emailMatches = requestEmail && applicationEmail && requestEmail === applicationEmail;
-    const panMatches = requestPan && applicationPan && requestPan === applicationPan;
-
-    if (!application) {
-      return res.status(401).json({
-        success: false,
-        message: "Application session expired. Please start again.",
-      });
-    }
-
-    if (!applicationContactMatches(application, {
-      mobile: requestMobile,
-      email: requestEmail,
-      pan: requestPan,
-    })) {
-      return res.status(401).json({
-        success: false,
-        message: "Application session expired. Please start again.",
-      });
-    }
-
-    req.applicationSession = {
-      applicationId: application.application_id || requestedApplicationId,
-      mobile: applicationMobile,
-      recovered: true,
-      viaDraftApplication: !mobileMatches && !emailMatches && !panMatches,
-    };
-    setApplicationSessionCookie(res, {
-      applicationId: application.application_id || requestedApplicationId,
-      mobile: applicationMobile,
-    });
-    return next();
-  } catch (error) {
-    return next(error);
-  }
 };
 
 const getHeaderValue = (req, name) => String(req.headers[name] || "").trim();
@@ -343,57 +283,5 @@ export const requireApplicationSessionOrMatchingContact = async (req, res, next)
     return next();
   }
 
-  if (!requestedApplicationId) {
-    return rejectRecoveredSession(req, res);
-  }
-
-  const requestMobile = normalizeMobile(
-    getHeaderValue(req, "x-application-mobile") || req.body?.applicationMobile
-  );
-  const requestEmail = normalizeEmail(
-    getHeaderValue(req, "x-application-email") || req.body?.applicationEmail
-  );
-  const requestPan = normalizePan(
-    getHeaderValue(req, "x-application-pan") || req.body?.applicationPan
-  );
-
-  if (!hasApplicationContactProof({ mobile: requestMobile, email: requestEmail, pan: requestPan })) {
-    return rejectRecoveredSession(req, res);
-  }
-
-  try {
-    const application = await getApplicationById(requestedApplicationId);
-    const applicationMobile = normalizeMobile(application?.mobile);
-    const applicationEmail = normalizeEmail(application?.email);
-    const applicationPan = normalizePan(application?.pan_number);
-    const mobileMatches = requestMobile && applicationMobile && requestMobile === applicationMobile;
-    const emailMatches = requestEmail && applicationEmail && requestEmail === applicationEmail;
-    const panMatches = requestPan && applicationPan && requestPan === applicationPan;
-
-    if (!application) {
-      return rejectRecoveredSession(req, res);
-    }
-
-    if (!applicationContactMatches(application, {
-      mobile: requestMobile,
-      email: requestEmail,
-      pan: requestPan,
-    })) {
-      return rejectRecoveredSession(req, res);
-    }
-
-    req.applicationSession = {
-      applicationId: application.application_id || requestedApplicationId,
-      mobile: applicationMobile,
-      recovered: true,
-      viaDraftApplication: !mobileMatches && !emailMatches && !panMatches,
-    };
-    setApplicationSessionCookie(res, {
-      applicationId: application.application_id || requestedApplicationId,
-      mobile: applicationMobile,
-    });
-    return next();
-  } catch (error) {
-    return next(error);
-  }
+  return rejectRecoveredSession(req, res);
 };
