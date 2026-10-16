@@ -126,6 +126,11 @@ const createRateLimiter = ({ windowMs, max, message }) => (req, res, next) => {
   const current = rateLimitBuckets.get(key);
 
   if (!current || current.resetAt <= now) {
+    if (rateLimitBuckets.size > 10000) {
+      for (const [k, b] of rateLimitBuckets.entries()) {
+        if (b.resetAt <= now) rateLimitBuckets.delete(k);
+      }
+    }
     rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
     return next();
   }
@@ -198,8 +203,8 @@ app.use((req, res, next) => {
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(generalLimiter);
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 app.use(
   "/uploads",
   express.static(uploadDir, {

@@ -237,6 +237,14 @@ export const sendOTPService = async ({ phone, email }) => {
     userAttempt.firstAttempt = now;
   }
 
+  const RESEND_COOLDOWN_MS = 30 * 1000;
+  if (userAttempt.lastSentAt && now - userAttempt.lastSentAt < RESEND_COOLDOWN_MS) {
+    const waitSeconds = Math.ceil((RESEND_COOLDOWN_MS - (now - userAttempt.lastSentAt)) / 1000);
+    const error = new Error(`Please wait ${waitSeconds}s before requesting another OTP.`);
+    error.statusCode = 429;
+    throw error;
+  }
+
   if (userAttempt.count >= MAX_ATTEMPTS) {
     userAttempt.blockedUntil = now + BLOCK_DURATION_MS;
     const error = new Error("Maximum attempts reached. You are blocked for 15 minutes.");
@@ -245,6 +253,7 @@ export const sendOTPService = async ({ phone, email }) => {
   }
 
   userAttempt.count += 1;
+  userAttempt.lastSentAt = now;
 
   const otp = Math.floor(100000 + Math.random() * 900000);
   const channels = [];
