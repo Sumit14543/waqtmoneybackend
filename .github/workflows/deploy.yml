@@ -183,4 +183,12 @@ jobs:
             "
 
       - name: Verify Public API
-        run: curl -fsS https://api.waqtmoney.com/api/health
+        run: |
+          for i in {1..5}; do
+            if curl -fsS -A "Mozilla/5.0 (compatible; GitHubActionsCI/1.0)" --retry 3 --retry-delay 2 https://api.waqtmoney.com/api/health; then
+              exit 0
+            fi
+            echo "Waiting for public API to become reachable..."
+            sleep 3
+          done
+          exit 1
