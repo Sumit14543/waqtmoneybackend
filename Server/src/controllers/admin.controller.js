@@ -4,6 +4,7 @@ import crypto from "crypto";
 import db from "../configs/db.js";
 import { getJwtSecret } from "../configs/secrets.js";
 import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
+import logger from "../utils/logger.js";
 
 const APPLICATION_TABLE = "waqt_money_loan_applications";
 const HERO_LEADS_TABLE = "waqt_money_hero_leads";
@@ -43,7 +44,52 @@ const getAdminUsers = () => {
   return users;
 };
 
-const verifyAdminAccount = (email, password) => {
+export const ensureAdminUsersTable = async () => {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS waqt_admin_users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(50) DEFAULT 'admin',
+        is_active TINYINT(1) DEFAULT 1,
+        last_login_at DATETIME NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+
+    const [[countRes]] = await db.query("SELECT COUNT(*) AS total FROM waqt_admin_users");
+    if (!countRes || countRes.total === 0) {
+      logger.info("Initializing waqt_admin_users with default hashed credentials...");
+      const defaultUsers = [
+        {
+          email: "shivani@waqtfinance.com",
+          hash: bcrypt.hashSync("Waqt@shivani@#2016##", 10),
+          role: "admin",
+        },
+        {
+          email: "support@waqtmoney.in",
+          hash: bcrypt.hashSync("WaqtSupport@2026##", 10),
+          role: "admin",
+        },
+      ];
+      for (const u of defaultUsers) {
+        await db.query(
+          "INSERT INTO waqt_admin_users (email, password_hash, role, is_active) VALUES (?, ?, ?, 1) ON DUPLICATE KEY UPDATE is_active = 1",
+          [u.email, u.hash, u.role]
+        );
+      }
+    }
+  } catch (err) {
+    logger.warn("Admin users table initialization warning:", err.message);
+  }
+};
+
+// Auto-initialize admin table on module load
+ensureAdminUsersTable().catch(() => null);
+
+const verifyAdminAccount = async (email, password) => {
   const cleanEmail = String(email || "").trim().toLowerCase();
   const cleanPass = String(password || "").trim();
 
@@ -51,6 +97,27 @@ const verifyAdminAccount = (email, password) => {
     return { valid: false, reason: "Only official @waqtfinance.com or @waqtmoney.in emails are allowed." };
   }
 
+  // 1. Primary check in Database (Secure Bcrypt Hash)
+  try {
+    await ensureAdminUsersTable();
+    const [rows] = await db.query(
+      "SELECT * FROM waqt_admin_users WHERE email = ? AND is_active = 1 LIMIT 1",
+      [cleanEmail]
+    );
+
+    if (rows && rows.length > 0) {
+      const user = rows[0];
+      const isMatch = await bcrypt.compare(cleanPass, user.password_hash);
+      if (!isMatch) {
+        return { valid: false, reason: "Invalid administrator password." };
+      }
+      return { valid: true, user: { email: user.email, role: user.role } };
+    }
+  } catch (dbErr) {
+    logger.warn("Database admin lookup warning:", dbErr.message);
+  }
+
+  // 2. Fallback check for .env configured users
   const users = getAdminUsers();
   const matchedUser = users.find((u) => u.email === cleanEmail);
 
@@ -77,6 +144,19 @@ const verifyAdminAccount = (email, password) => {
 
   if (!isMatch) {
     return { valid: false, reason: "Invalid administrator password." };
+  }
+
+  // If verified via .env, persist to Database table with bcrypt hash so future logins use DB
+  try {
+    const hashedPass = matchedUser.pass.startsWith("$2")
+      ? matchedUser.pass
+      : await bcrypt.hash(cleanPass, 10);
+    await db.query(
+      "INSERT INTO waqt_admin_users (email, password_hash, role, is_active) VALUES (?, ?, 'admin', 1) ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash)",
+      [cleanEmail, hashedPass]
+    );
+  } catch {
+    // Non-fatal
   }
 
   return { valid: true, user: matchedUser };
@@ -139,7 +219,7 @@ export const adminSendOtp = async (req, res) => {
     });
   }
 
-  const verification = verifyAdminAccount(cleanEmail, password);
+  const verification = await verifyAdminAccount(cleanEmail, password);
   if (!verification.valid) {
     recordFailedAttempt(clientIp);
     return res.status(401).json({
@@ -193,6 +273,9 @@ export const adminVerifyOtp = async (req, res) => {
 
   if (otpResult === true) {
     clearAttempts(clientIp);
+
+    // Update last login in database
+    db.query("UPDATE waqt_admin_users SET last_login_at = NOW() WHERE email = ?", [cleanEmail]).catch(() => null);
 
     const token = jwt.sign(
       { username: cleanEmail, email: cleanEmail, role: "admin", loginTime: Date.now() },

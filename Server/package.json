@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test src/**/*.test.js",
+    "admin": "node scripts/manageAdmin.js",
     "start": "node Server.js"
   },
   "keywords": [],
