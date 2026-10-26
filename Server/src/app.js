@@ -115,14 +115,14 @@ if (isProduction) {
 }
 
 const rateLimitBuckets = new Map();
-const createRateLimiter = ({ windowMs, max, message }) => (req, res, next) => {
+const createRateLimiter = ({ name = "rl", windowMs, max, message }) => (req, res, next) => {
   const now = Date.now();
   const identity = req.ip || req.socket?.remoteAddress || "unknown";
   // Normalize path: strip optional /api prefix and trailing slashes so /api/foo and /foo share the same bucket
   const cleanPath = (req.baseUrl + req.path)
     .replace(/^\/api\b/, "")
     .replace(/\/+$/, "") || "/";
-  const key = `${identity}:${req.method}:${cleanPath}`;
+  const key = `${name}:${identity}:${req.method}:${cleanPath}`;
   const current = rateLimitBuckets.get(key);
 
   if (!current || current.resetAt <= now) {
@@ -159,24 +159,34 @@ setInterval(() => {
 }, 5 * 60 * 1000).unref();
 
 const generalLimiter = createRateLimiter({
+  name: "general",
   windowMs: 15 * 60 * 1000,
   max: isProduction ? 600 : 5000,
   message: "Too many requests. Please try again shortly.",
 });
 const sensitiveLimiter = createRateLimiter({
+  name: "sensitive",
   windowMs: 15 * 60 * 1000,
   max: isProduction ? 5 : 200,
   message: "Too many verification attempts. Please try again after a few minutes.",
 });
 const paymentLimiter = createRateLimiter({
+  name: "payment",
   windowMs: 15 * 60 * 1000,
   max: isProduction ? 30 : 300,
   message: "Too many payment requests. Please try again after a few minutes.",
 });
 const formUploadLimiter = createRateLimiter({
+  name: "formUpload",
   windowMs: 15 * 60 * 1000,
   max: isProduction ? 15 : 300,
   message: "Too many requests. Please try again after a few minutes.",
+});
+const applySubmissionLimiter = createRateLimiter({
+  name: "applySubmit",
+  windowMs: 15 * 60 * 1000,
+  max: isProduction ? 5 : 100,
+  message: "Too many loan application attempts. Please try again after a few minutes.",
 });
 
 app.use((req, res, next) => {
@@ -263,6 +273,8 @@ app.use(
     "/admin/verify-otp",
     "/api/pan/verify",
     "/pan/verify",
+    "/api/pan/skip",
+    "/pan/skip",
     "/api/aadhaar",
     "/aadhaar",
     "/api/react-aadhaar",
@@ -297,6 +309,17 @@ app.use(
     "/email/validate-official",
   ],
   formUploadLimiter,
+);
+
+// Loan Application Creation Limiter (Anti-Bot / Anti-Spam)
+app.use(
+  [
+    "/api/application/apply",
+    "/application/apply",
+    "/api/loan/apply",
+    "/loan/apply",
+  ],
+  applySubmissionLimiter,
 );
 
 app.use(["/api/loan", "/loan"], loanRoutes);

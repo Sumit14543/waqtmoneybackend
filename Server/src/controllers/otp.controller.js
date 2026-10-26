@@ -1,6 +1,7 @@
 import { sendOTPService, verifyOTPService } from "../services/otp.service.js";
-import { getApplicationById } from "../services/application.service.js";
+import { getApplicationById, updateApplication } from "../services/application.service.js";
 import { createApplicationUploadToken, setApplicationSessionCookie } from "../middleware/applicationSession.middleware.js";
+import logger from "../utils/logger.js";
 
 export const sendOTP = async (req, res, next) => {
   const { email, phone } = req.body;
@@ -63,6 +64,10 @@ export const verifyOTP = async (req, res, next) => {
 
         if (application && (mobileMatches || emailMatches)) {
           const effectiveAppId = application.application_id || requestedApplicationId;
+          await updateApplication(effectiveAppId, {
+            current_step: "otp_verified",
+          }).catch((err) => logger.warn("Step update warning after OTP:", err?.message || err));
+
           response.applicationUploadToken = createApplicationUploadToken({
             applicationId: effectiveAppId,
           });

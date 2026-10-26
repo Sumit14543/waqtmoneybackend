@@ -278,6 +278,19 @@ const savePanVerification = async ({ applicationId, pan, fullName, dob, uanNumbe
   }
 };
 
+const panAppAttemptBuckets = new Map();
+const MAX_PAN_ATTEMPTS_PER_APP = 3;
+const PAN_APP_WINDOW_MS = 15 * 60 * 1000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of panAppAttemptBuckets.entries()) {
+    if (bucket.resetAt <= now) {
+      panAppAttemptBuckets.delete(key);
+    }
+  }
+}, 5 * 60 * 1000).unref();
+
 const sendPanVerificationResponse = (res, {
   pan,
   fullName,
@@ -315,6 +328,63 @@ export const verifyPan = async (req, res) => {
 
   if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(PAN_Number)) {
     return res.status(400).json({ message: "Invalid PAN format" });
+  }
+
+  if (!applicationId) {
+    return res.status(400).json({ message: "Application session ID is required" });
+  }
+
+  // Rate limit: Max 3 PAN verification attempts per application ID per 15 minutes
+  const now = Date.now();
+  const attemptKey = `app:${applicationId}`;
+  const appAttempts = panAppAttemptBuckets.get(attemptKey);
+  if (appAttempts && appAttempts.resetAt > now && appAttempts.count >= MAX_PAN_ATTEMPTS_PER_APP) {
+    const retryAfter = Math.max(1, Math.ceil((appAttempts.resetAt - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfter));
+    return res.status(429).json({
+      success: false,
+      message: "Too many PAN verification attempts for this application. Please try again after 15 minutes.",
+    });
+  }
+
+  // Validate application state in database before invoking 3rd party paid API
+  try {
+    const lookup = buildApplicationLookup(applicationId);
+    const [appRows] = await db.execute(
+      `SELECT id, application_id, mobile, pan_number, current_step
+       FROM ${APPLICATION_TABLE}
+       WHERE ${lookup.clause}
+       LIMIT 1`,
+      lookup.values
+    );
+
+    const existingApp = appRows[0];
+    if (!existingApp) {
+      return res.status(404).json({
+        message: "Application not found. Please start a fresh application.",
+      });
+    }
+
+    if (existingApp.current_step === "otp_pending") {
+      return res.status(403).json({
+        message: "Please complete mobile OTP verification before proceeding with PAN verification.",
+      });
+    }
+
+    if (existingApp.pan_number && existingApp.pan_number !== PAN_Number) {
+      return res.status(400).json({
+        message: "A different PAN is already linked to this application.",
+      });
+    }
+
+    // Count this attempt for this application
+    if (!appAttempts || appAttempts.resetAt <= now) {
+      panAppAttemptBuckets.set(attemptKey, { count: 1, resetAt: now + PAN_APP_WINDOW_MS });
+    } else {
+      appAttempts.count += 1;
+    }
+  } catch (dbErr) {
+    logger.warn("Pre-verification application check warning:", dbErr.message);
   }
 
   try {
