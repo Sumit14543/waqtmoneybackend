@@ -213,35 +213,6 @@ const findLatestApplicationByMobile = async (mobile) => {
   return applications[0] || null;
 };
 
-const findOrCreateOtpUser = async (mobile) => {
-  await ensureUsersTable();
-
-  const [existingUsers] = await db.query(
-    "SELECT id, name, email, mobile FROM users WHERE mobile=? ORDER BY id DESC LIMIT 1",
-    [mobile]
-  );
-
-  if (existingUsers.length > 0) {
-    return existingUsers[0];
-  }
-
-  const application = await findLatestApplicationByMobile(mobile);
-  const name = String(application?.full_name || "").trim() || "Customer";
-  const email = String(application?.email || "").trim() || null;
-  const randomPassword = await bcrypt.hash(`otp-login-${mobile}-${Date.now()}-${Math.random()}`, 10);
-  const [result] = await db.query(
-    "INSERT INTO users (name, email, mobile, password) VALUES (?, ?, ?, ?)",
-    [name, email, mobile, randomPassword]
-  );
-
-  return {
-    id: result.insertId,
-    name,
-    email,
-    mobile,
-  };
-};
-
 const formatStepLabel = (step) => {
   const currentStep = String(step || "").trim().toLowerCase();
   const labels = {
@@ -867,6 +838,91 @@ const toDashboardLoan = (loan, crmStatus = null) => {
   };
 };
 
+const findCustomerAccountOrApplication = async (mobile) => {
+  await ensureUsersTable();
+
+  // 1. Check existing registered user in users table
+  const [existingUsers] = await db.query(
+    "SELECT id, name, email, mobile FROM users WHERE mobile = ? OR mobile = ? OR mobile = ? ORDER BY id DESC LIMIT 1",
+    [mobile, `91${mobile}`, `+91${mobile}`]
+  );
+
+  if (existingUsers.length > 0) {
+    return {
+      type: "user",
+      user: existingUsers[0],
+      name: existingUsers[0].name,
+      email: existingUsers[0].email,
+      mobile: existingUsers[0].mobile,
+    };
+  }
+
+  // 2. Check loan applications in waqt_money_loan_applications
+  const application = await findLatestApplicationByMobile(mobile);
+  if (application) {
+    return {
+      type: "application",
+      application,
+      name: String(application.full_name || "").trim() || "Customer",
+      email: String(application.email || "").trim() || null,
+      mobile,
+    };
+  }
+
+  // 3. Check CRM leads by mobile (if CRM is configured)
+  try {
+    const crmLeads = await fetchCrmLeadStatusesByMobile(mobile).catch(() => []);
+    if (Array.isArray(crmLeads) && crmLeads.length > 0) {
+      const firstLead = crmLeads[0];
+      const name = String(firstLead.name || firstLead.fullName || firstLead.customerName || "").trim() || "Customer";
+      const email = String(firstLead.email || "").trim() || null;
+      return {
+        type: "crm",
+        crmLead: firstLead,
+        name,
+        email,
+        mobile,
+      };
+    }
+  } catch {
+    // Silently continue if CRM is unavailable
+  }
+
+  return null;
+};
+
+const findOrCreateOtpUser = async (mobile) => {
+  await ensureUsersTable();
+
+  const customerRecord = await findCustomerAccountOrApplication(mobile);
+  if (!customerRecord) {
+    return null;
+  }
+
+  if (customerRecord.type === "user" && customerRecord.user) {
+    return customerRecord.user;
+  }
+
+  // If customer has a loan application or CRM lead, create their user account with actual customer details
+  const name = customerRecord.name || "Customer";
+  const email = customerRecord.email || null;
+  const randomPassword = await bcrypt.hash(
+    `otp-login-${mobile}-${Date.now()}-${crypto.randomBytes(16).toString("hex")}`,
+    10
+  );
+  const [result] = await db.query(
+    "INSERT INTO users (name, email, mobile, password) VALUES (?, ?, ?, ?)",
+    [name, email, mobile, randomPassword]
+  );
+
+  return {
+    id: result.insertId,
+    name,
+    email,
+    mobile,
+  };
+};
+
 export const signup = async (req, res) => {
   try {
     await ensureUsersTable();
@@ -952,7 +1008,7 @@ export const login = async (req, res) => {
       });
     }
 
-    const [user] = await db.query("SELECT * FROM users WHERE mobile=?", [mobile]);
+    const [user] = await db.query("SELECT * FROM users WHERE mobile=? OR mobile=? OR mobile=?", [mobile, `91${mobile}`, `+91${mobile}`]);
     if (user.length === 0) {
       return res.status(400).json({ message: "Invalid credentials" });
     }
@@ -992,6 +1048,15 @@ export const sendLoginOtp = async (req, res, next) => {
       });
     }
 
+    // Security Check: Only registered customers or loan applicants are allowed to receive login OTP
+    const customer = await findCustomerAccountOrApplication(mobile);
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: "This mobile number is not registered with us. Please apply for a loan first.",
+      });
+    }
+
     const result = await sendOTPService({ phone: mobile });
     console.log("Login OTP request completed", { channels: result.channels });
     return res.status(200).json({
@@ -1026,6 +1091,16 @@ export const verifyLoginOtp = async (req, res) => {
       });
     }
 
+    // Security Check 1: Ensure mobile belongs to an existing customer
+    const customer = await findCustomerAccountOrApplication(mobile);
+    if (!customer) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. No customer account or application found for this mobile number.",
+      });
+    }
+
+    // Security Check 2: Verify OTP
     const otpResult = verifyOTPService({ phone: mobile, otp });
 
     if (otpResult === "expired") {
@@ -1037,6 +1112,12 @@ export const verifyLoginOtp = async (req, res) => {
     }
 
     const user = await findOrCreateOtpUser(mobile);
+    if (!user) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. No customer account or application found for this mobile number.",
+      });
+    }
 
     const token = createToken(user);
     setAuthCookie(res, token);
