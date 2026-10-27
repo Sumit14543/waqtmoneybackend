@@ -572,7 +572,11 @@ const fetchCrmLeadStatusesByMobile = async (mobile) => {
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.success) {
-        return normalizeCrmStatusList(data.data);
+        const rawList = normalizeCrmStatusList(data.data);
+        return rawList.filter((lead) => {
+          const leadPhone = normalizeMobile(lead?.phone || lead?.mobile || lead?.phoneNumber);
+          return !leadPhone || leadPhone === mobile;
+        });
       }
 
       lastError = new Error(data.message || "Unable to fetch status by mobile");
@@ -872,13 +876,16 @@ const findCustomerAccountOrApplication = async (mobile) => {
   // 3. Check CRM leads by mobile (if CRM is configured)
   try {
     const crmLeads = await fetchCrmLeadStatusesByMobile(mobile).catch(() => []);
-    if (Array.isArray(crmLeads) && crmLeads.length > 0) {
-      const firstLead = crmLeads[0];
-      const name = String(firstLead.name || firstLead.fullName || firstLead.customerName || "").trim() || "Customer";
-      const email = String(firstLead.email || "").trim() || null;
+    const matchingLead = (crmLeads || []).find((l) => {
+      const p = normalizeMobile(l?.phone || l?.mobile || l?.phoneNumber);
+      return !p || p === mobile;
+    });
+    if (matchingLead) {
+      const name = String(matchingLead.name || matchingLead.fullName || matchingLead.customerName || "").trim() || "Customer";
+      const email = String(matchingLead.email || "").trim() || null;
       return {
         type: "crm",
-        crmLead: firstLead,
+        crmLead: matchingLead,
         name,
         email,
         mobile,

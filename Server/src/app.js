@@ -239,7 +239,7 @@ app.get("/", (req, res) => {
 });
 
 app.get("/api/health", (req, res) => {
-  res.json({ success: true, status: "ok", version: "v2" });
+  res.json({ success: true, status: "ok", version: "v3" });
 });
 
 // Sensitive Rate Limits (Authentication, OTP, Admin Auth, Session Recovery, PAN, Aadhaar)
