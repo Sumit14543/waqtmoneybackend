@@ -42,6 +42,9 @@ const readJsonOrText = async (response) => {
   }
 };
 
+const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
+const normalizePan = (value) => String(value || "").trim().toUpperCase();
+
 const unwrapCrmData = (payload, identifier = "") => {
   let data = payload?.data !== undefined ? payload.data : payload;
 
@@ -50,13 +53,32 @@ const unwrapCrmData = (payload, identifier = "") => {
 
     if (identifier) {
       const idStr = String(identifier).trim().toLowerCase();
-      const matchedById = data.find((item) => {
+      const idMobile = normalizeMobile(identifier);
+      const idPan = normalizePan(identifier);
+
+      const matches = data.filter((item) => {
         const itemLoanId = String(item?.loanId || item?.loan_id || item?.sanction?.loanId || item?.repayment?.loanId || "").trim().toLowerCase();
         const itemLeadId = String(item?.sourceLeadId || item?.source_lead_id || item?.sourceApplicationId || item?.applicationId || item?.id || "").trim().toLowerCase();
         const itemCustId = String(item?.customerId || item?.customer_id || item?.custId || item?.cust_id || "").trim().toLowerCase();
-        return (itemLoanId && itemLoanId === idStr) || (itemLeadId && itemLeadId === idStr) || (itemCustId && itemCustId === idStr);
+        const itemMobile = normalizeMobile(item?.phone || item?.mobile || item?.phoneNumber || item?.customerPhone || item?.customerMobile);
+        const itemPan = normalizePan(item?.pan || item?.panNumber);
+
+        return (
+          (itemLoanId && itemLoanId === idStr) ||
+          (itemLeadId && itemLeadId === idStr) ||
+          (itemCustId && itemCustId === idStr) ||
+          (idMobile && idMobile.length === 10 && itemMobile === idMobile) ||
+          (idPan && idPan.length === 10 && itemPan === idPan)
+        );
       });
-      if (matchedById) return matchedById;
+
+      if (matches.length > 0) {
+        const disbursedMatch = matches.find((item) => hasDisbursedStatus(item));
+        return disbursedMatch || matches[0];
+      }
+
+      // When an explicit identifier is searched and not found, never leak another customer's record
+      return null;
     }
 
     const disbursedLead = data.find((item) => hasDisbursedStatus(item));
@@ -65,8 +87,6 @@ const unwrapCrmData = (payload, identifier = "") => {
 
   return data || null;
 };
-const normalizeMobile = (value) => String(value || "").replace(/\D/g, "").slice(-10);
-const normalizePan = (value) => String(value || "").trim().toUpperCase();
 
 const maskLookupIdentifier = (value) => {
   const text = String(value || "").trim();

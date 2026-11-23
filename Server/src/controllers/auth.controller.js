@@ -574,8 +574,8 @@ const fetchCrmLeadStatusesByMobile = async (mobile) => {
       if (response.ok && data.success) {
         const rawList = normalizeCrmStatusList(data.data);
         return rawList.filter((lead) => {
-          const leadPhone = normalizeMobile(lead?.phone || lead?.mobile || lead?.phoneNumber);
-          return !leadPhone || leadPhone === mobile;
+          const leadPhone = normalizeMobile(lead?.phone || lead?.mobile || lead?.phoneNumber || lead?.customerPhone || lead?.customerMobile);
+          return Boolean(leadPhone && leadPhone === mobile);
         });
       }
 
@@ -877,8 +877,8 @@ const findCustomerAccountOrApplication = async (mobile) => {
   try {
     const crmLeads = await fetchCrmLeadStatusesByMobile(mobile).catch(() => []);
     const matchingLead = (crmLeads || []).find((l) => {
-      const p = normalizeMobile(l?.phone || l?.mobile || l?.phoneNumber);
-      return !p || p === mobile;
+      const p = normalizeMobile(l?.phone || l?.mobile || l?.phoneNumber || l?.customerPhone || l?.customerMobile);
+      return Boolean(p && p === mobile);
     });
     if (matchingLead) {
       const name = String(matchingLead.name || matchingLead.fullName || matchingLead.customerName || "").trim() || "Customer";

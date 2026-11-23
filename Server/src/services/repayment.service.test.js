@@ -56,3 +56,26 @@ test("buildRepaymentApplicationFromCRM handles array of CRM leads and picks disb
   assert.equal(result.full_name, "RAJ OMPRAKASH SHASTRI");
   assert.equal(result.disbursed_amount, 8820);
 });
+
+test("buildRepaymentApplicationFromCRM returns null and never leaks other customer lead when mobile does not match", () => {
+  const crmStatusArray = [
+    {
+      sourceLeadId: "176",
+      loanId: "LNWQTMN00176",
+      statusCode: "disbursed",
+      phone: "9764035668",
+      customerName: "RAJ OMPRAKASH SHASTRI",
+      disbursement: {
+        disbursed_amount: 8820,
+      },
+      repayment: {
+        totalAmount: 20900,
+        balanceAmount: 20900,
+      },
+    },
+  ];
+
+  // Try looking up with an unrelated mobile number (e.g. 8081762523)
+  const result = buildRepaymentApplicationFromCRM("8081762523", null, crmStatusArray);
+  assert.equal(result, null);
+});
